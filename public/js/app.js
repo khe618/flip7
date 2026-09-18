@@ -1,4 +1,4 @@
-import { createNet, readName, writeName, readToken } from "./net.js";
+import { createNet, readName, writeName, readToken, clearToken } from "./net.js";
 import * as landing from "./landing.js";
 import * as lobby from "./lobby.js";
 import * as table from "./table.js";
@@ -21,6 +21,7 @@ function live(text) { $("live").textContent = text; }
 // route changed would drag the view back off the landing or rules page.
 function leaveRoom() {
   if (net) { net.close(); net = null; }
+  table.stop();
   state = null; you = null; room = null; lastTurnRendered = -1;
   $("roomCode").hidden = true;
 }
@@ -52,7 +53,11 @@ function enterRoom(code, intent = null) {
     onConnection: (ok) => { $("connPill").hidden = ok; live(ok ? "connected" : "reconnecting"); },
     onJoined: (msg) => { you = msg.playerId; },
     onError: (msg) => {
-      if (msg.code === "seat_taken_over") { showView("joinView"); toast(msg.message); return; }
+      // The socket that lost the seat never reconnects, so the join card it
+      // shows needs a live one behind it: drop the token this tab no longer
+      // owns (keeping it would steal the seat straight back) and re-enter the
+      // room, which binds Sit down to the new socket.
+      if (msg.code === "seat_taken_over") { clearToken(code); enterRoom(code); toast(msg.message); return; }
       if (msg.code === "unknown_token" || msg.code === "game_in_progress") { showJoin(); if (msg.code === "game_in_progress") toast("Game in progress, wait for the lobby."); return; }
       toast(msg.message);
     },

@@ -6,6 +6,7 @@ const SEAT_TAKEN_OVER = 4000;
 export function tokenKey(room) { return `flip7:token:${room}`; }
 export function readToken(room) { try { return localStorage.getItem(tokenKey(room)); } catch { return null; } }
 export function writeToken(room, token) { try { localStorage.setItem(tokenKey(room), token); } catch { /* ignore */ } }
+export function clearToken(room) { try { localStorage.removeItem(tokenKey(room)); } catch { /* ignore */ } }
 export function readName() { try { return localStorage.getItem("flip7:name") || ""; } catch { return ""; } }
 export function writeName(name) { try { localStorage.setItem("flip7:name", name); } catch { /* ignore */ } }
 

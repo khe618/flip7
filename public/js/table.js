@@ -2,7 +2,11 @@ import { renderLog } from "./log.js";
 const $ = (id) => document.getElementById(id);
 const CARD_LABEL = { freeze: "Freeze", flip_three: "Flip 3", second_chance: "2nd Chance" };
 let countdown = null;
+let lastRound = null;           // the round seenCounts describes
 const seenCounts = new Map();   // player id -> number of cards rendered last time
+
+// Called when the room is left: stop the countdown and forget the card counts.
+export function stop() { clearInterval(countdown); countdown = null; lastRound = null; seenCounts.clear(); }
 
 function cardEl(card, extra = "") {
   const el = document.createElement("span");
@@ -15,6 +19,10 @@ function cardEl(card, extra = "") {
 export function render(state, ctx) {
   const g = state.game;
   if (!g) return;
+  // Every line is emptied when a round starts, so the counters have to reset
+  // with the round; otherwise no card is marked new until a later round grows
+  // longer than the one before it, and the flip stops animating after round 1.
+  if (g.round !== lastRound) { lastRound = g.round; seenCounts.clear(); }
   const nameOf = (id) => (g.players.find((p) => p.id === id) || { name: id }).name;
   const current = g.current_player ? nameOf(g.current_player) : "";
   const timer = state.timer;
