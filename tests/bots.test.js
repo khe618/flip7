@@ -84,3 +84,13 @@ test("adaptive stays when banking now reaches the target while leading", () => {
   };
   assert.equal(bots.POLICIES.adaptive(makeRequest(v, { gameId: "g", timeoutMs: 1, requestId: "r" }), () => 0.5), "stay");
 });
+
+test("smoke-suite calibration matches the committed fixture exactly (regression, not a correctness proof)", async () => {
+  const fs = require("node:fs"); const os = require("node:os"); const path = require("node:path");
+  const { runBenchmark } = require("../bench/run");
+  const { LINEUP, pick } = require("../bench/calibrate");
+  const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "bench", "fixtures", "calibration.json"), "utf8"));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "flip7-cal-test-"));
+  const { summary } = await runBenchmark({ agents: LINEUP, suite: "smoke", out, quiet: true });
+  assert.deepEqual(pick(summary), fixture.smoke, "run `npm run calibrate` after an intended rules or policy change");
+});
