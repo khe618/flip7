@@ -78,11 +78,14 @@ async function runBenchmark(options) {
         }
         const gameId = opaqueId(4);
         const players = seatAdapters.map((sa, s) => ({ id: `p${s + 1}`, name: sa.adapter.name, seat: s, agent: keyOf(sa.adapter), spec: sa.spec }));
+        // Notify every seat before logging game_start: if a seat's start() hook throws (adapter died),
+        // the game never really began and the log should have no trace of it — not a dangling
+        // game_start with no matching game_end.
+        for (const p of players) await seatAdapters[p.seat].adapter.start({ type: "start", protocol: PROTOCOL, game_id: gameId, you: p.id, players: players.map((q) => ({ id: q.id, name: q.name, seat: q.seat })) });
         write({ kind: "game_start", game_id: gameId, seed, rotation, seats: players });
         const stats = players.map(() => ({ busts: 0, flip7s: 0, hits: 0, decisions: 0, attempts: 0, invalid: 0, timeouts: 0, fallbacks: 0, latencies: [] }));
         let r = engine.step(engine.createGame({ players: players.map((p) => ({ id: p.id, name: p.name })), seed }), { type: "start_round" });
         account(stats, r.events);
-        for (const p of players) await seatAdapters[p.seat].adapter.start({ type: "start", protocol: PROTOCOL, game_id: gameId, you: p.id, players: players.map((q) => ({ id: q.id, name: q.name, seat: q.seat })) });
         let decisions = 0;
         while (r.state.phase !== "game_over") {
           if (r.state.phase === "round_over") { r = engine.step(r.state, { type: "start_round" }); account(stats, r.events); continue; }

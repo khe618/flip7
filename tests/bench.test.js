@@ -86,3 +86,27 @@ test("--agents seats every named agent and rotates them; a tampered log fails re
   const rep = verifyReplay(file);
   assert.ok(rep.failures.length >= 1);
 });
+
+test("an AdapterError mid-run aborts the benchmark with aborted:true and partial results kept", async () => {
+  const out = tmp();
+  const fixture = path.join(__dirname, "fixtures", "agent-abort.js");
+  const { dir, summary } = await runBenchmark({ agent: "file:" + fixture, suite: "smoke", seeds: 1, out, quiet: true });
+  assert.equal(summary.aborted, true);
+  assert.match(summary.abort_message, /start failed/);
+  assert.match(summary.abort_message, /boom on second game/);
+  assert.equal(summary.n_games, 1);
+  assert.ok(summary.agents["abort@t"]);
+  assert.equal(summary.agents["abort@t"].n_games, 1);
+  // the non-AdapterError abort path writes only { kind: "summary", aborted: true } with no metrics;
+  // this run must take the AdapterError path, which keeps the full metrics-bearing summary.
+  assert.ok(summary.agents && Object.keys(summary.agents).length > 0);
+  const recs = lines(path.join(dir, "games.jsonl"));
+  const starts = recs.filter((r) => r.kind === "game_start");
+  const ends = recs.filter((r) => r.kind === "game_end");
+  assert.equal(starts.length, 1);
+  assert.equal(ends.length, 1);
+  assert.equal(recs[recs.length - 1].kind, "summary");
+  assert.equal(recs[recs.length - 1].aborted, true);
+  const onDisk = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8"));
+  assert.deepEqual(onDisk, summary);
+});
