@@ -230,7 +230,7 @@ State shape (all fields required, no `undefined`):
   round: {
     lines: { [id]: { numbers: [], modifiers: [], secondChance: bool,
                      status: "active" | "stayed" | "busted" | "frozen" } },
-    dealCursor: null | { nextSeat },        // non-null only during the deal
+    dealCursor: null | { nextSeat, remaining },  // non-null only during the deal; remaining = seats still to visit (amended)
     turnSeat: null | seat,                  // the seat whose turn is in progress
     pending: null | { type: "hit_or_stay", player }
                   | { type: "choose_target", player, card, candidates: [id...] },
@@ -278,7 +278,7 @@ Copied from follow-suit's design, so only the differences are listed.
 - **Timer discipline.** Every delayed callback in a room (turn timer, round-summary auto-advance, bot think delay) carries an **epoch** `{ gameId, roundNumber, turnNumber }` captured when armed, and re-checks the room's current epoch immediately before mutating anything; a mismatch is a no-op. Arming a new timer of a kind cancels the previous one of that kind. `gameId` is a per-room counter incremented on `start-game`.
 - **Turn timer.** Armed whenever the engine sets `pending`. On expiry the room applies `defaultAction(request)` (§5.4) for that player and logs a `timeout` room event (not in engine history). Humans, agents, and bots all share `TURN_MS`; bots act well before it.
 - **Disconnects.** A disconnected human keeps their seat for the whole game; their decisions fall to the timer. Seat expiry runs only in `lobby` and `game_over`. A room with no connected **occupant** (human or agent) for `RESUME_TTL_MS` is deleted in any phase. A room of only visitors is deleted when the last visitor leaves.
-- Broadcast is a full per-recipient snapshot on every change. No diffs.
+- Broadcast is a full per-recipient snapshot on every change, sent once per change (*amended*: the server suppresses its trailing broadcast when the room game already broadcast during the same message). No diffs.
 
 ### 4.6 Wire protocol
 
@@ -302,7 +302,7 @@ Server → client:
 | --- | --- |
 | `joined` | `playerId`, `resumeToken` |
 | `state` | see below |
-| `error` | `message`, `code?` (`game_in_progress`, `room_full`, `stale_turn`, `illegal_action`, `not_seated`, `unknown_token`) |
+| `error` | `message`, `code?` (`game_in_progress`, `room_full`, `stale_turn`, `illegal_action`, `not_seated`, `unknown_token`, `not_enough_players` — *amended*: `start-game` with fewer than 2 seats after disconnected humans are dropped) |
 
 `state` for a seated recipient:
 
