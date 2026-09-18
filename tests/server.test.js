@@ -10,8 +10,11 @@ let child;
 
 test.before(async () => {
   child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    // ROUND_SUMMARY_MS is long so the full-game test drives next-round itself and never misses a summary
-    env: { ...process.env, PORT: "0", RESUME_TTL_MS: "400", TURN_MS: "300", ROUND_SUMMARY_MS: "5000", BOT_DELAY_MIN_MS: "5", BOT_DELAY_MAX_MS: "10" },
+    // ROUND_SUMMARY_MS is long so the full-game test drives next-round itself and never misses a summary.
+    // TURN_MS is 2 s: the round-trip tests always act immediately, so the turn timer only matters if a
+    // test stalls; keeping it wide avoids racing the default 3000 ms `until()` timeout against a tight
+    // auto-turn timer. The full-game test drives its own 20 ms poll loop and is unaffected either way.
+    env: { ...process.env, PORT: "0", RESUME_TTL_MS: "400", TURN_MS: "2000", ROUND_SUMMARY_MS: "5000", BOT_DELAY_MIN_MS: "5", BOT_DELAY_MAX_MS: "10" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   PORT = await new Promise((resolve, reject) => {
