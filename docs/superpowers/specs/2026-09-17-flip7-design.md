@@ -1,7 +1,7 @@
 # Flip 7 — design spec
 
 **Date:** 2026-09-17
-**Status:** draft for review (Codex-reviewed)
+**Status:** approved 2026-09-17 (Codex-reviewed)
 **Scope:** v1 of a real-time multiplayer Flip 7 website plus an agent-playable harness and benchmark.
 
 ## 1. What this is
