@@ -42,7 +42,8 @@ function connect(room) {
     last: (type) => [...messages].reverse().find((m) => m.type === type),
     // Resolves with the first message (from index `from`) matching pred; the waiter stays
     // registered until it matches, so non-matching messages in between do not drop it.
-    until(pred, label, from = 0, timeoutMs = 3000) {
+    // Default is 10 s because this shared machine runs many node processes; a healthy server answers in milliseconds.
+    until(pred, label, from = 0, timeoutMs = 10000) {
       return new Promise((resolve, reject) => {
         const t = setTimeout(() => { waiters.delete(check); reject(new Error(`timeout waiting for ${label}`)); }, timeoutMs);
         const check = () => {
