@@ -17,6 +17,16 @@ function create(spec, command) {
 
   function fail(msg) { return new AdapterError(`${spec}: ${msg}${stderr ? "\n--- stderr ---\n" + stderr.slice(-2000) : ""}`); }
 
+  // spawn() always runs `command` through a shell (see hello()). On Windows that shell is
+  // cmd.exe; child.kill() only terminates cmd.exe itself, not the real process it launched
+  // (Windows has no POSIX-style process groups here), so a hung agent survives as an orphan
+  // that keeps this adapter's stdio pipes open — discovered via a test that spawns an agent
+  // ignoring stdin close and asserts shutdown() actually ends it. taskkill /t kills the tree.
+  function killChild() {
+    if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+    else child.kill("SIGKILL");
+  }
+
   function send(obj) {
     if (!child || exit) throw fail(`process exited (${exit ? `exit code ${exit.code}` : "not started"})`);
     child.stdin.write(JSON.stringify(obj) + "\n");
@@ -77,7 +87,14 @@ function create(spec, command) {
     async shutdown() {
       if (!child || exit) return;
       child.stdin.end();
-      await new Promise((resolve) => { const t = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 2000); child.once("exit", () => { clearTimeout(t); resolve(); }); });
+      await new Promise((resolve) => {
+        const finish = () => { clearTimeout(t); clearTimeout(hardStop); resolve(); };
+        const t = setTimeout(killChild, 2000);
+        // taskkill runs as its own short-lived process, so its effect is not instant; give it
+        // a bit more room than a plain signal before giving up and returning control anyway.
+        const hardStop = setTimeout(finish, 3000);
+        child.once("exit", finish);
+      });
     },
   };
   return adapter;

@@ -18,6 +18,11 @@ const server = http.createServer((req, res) => {
       const legal = request.game.legal_actions;
       const send = () => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ request_id, action: legal.includes("stay") ? "stay" : legal[0] })); };
       if (mode === "invalid-once" && moves === 1) { res.writeHead(500); res.end("boom"); return; }
+      if (mode === "huge" && moves === 1) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ request_id, action: legal.includes("stay") ? "stay" : legal[0], pad: "x".repeat(70000) }));
+        return;
+      }
       if (mode === "slow") { setTimeout(send, 200); return; }
       send();
       return;

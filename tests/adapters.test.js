@@ -11,6 +11,12 @@ const { decide, parseAction } = require("../agents/decide");
 const FIX = (f) => path.join(__dirname, "fixtures", f);
 const P2 = [{ id: "p1", name: "p1" }, { id: "p2", name: "p2" }];
 
+async function startHttp(mode) {
+  const child = spawn(process.execPath, [FIX("http-agent.js"), "0"], { env: { ...process.env, MODE: mode }, stdio: ["ignore", "pipe", "pipe"] });
+  const port = await new Promise((resolve) => child.stdout.on("data", (b) => { const m = String(b).match(/listening (\d+)/); if (m) resolve(Number(m[1])); }));
+  return { url: `http://127.0.0.1:${port}`, stop: () => child.kill() };
+}
+
 async function playOne(adapter, timeoutMs = 2000) {
   await adapter.hello();
   let r = engine.step(engine.createGame({ players: P2, seed: 4 }), { type: "start_round" });
@@ -118,11 +124,6 @@ test("subprocess adapter plays, captures stderr, retries invalid, discards late 
 });
 
 test("http adapter plays, treats non-200 as invalid, times out, and rejects a protocol mismatch", async () => {
-  async function startHttp(mode) {
-    const child = spawn(process.execPath, [FIX("http-agent.js"), "0"], { env: { ...process.env, MODE: mode }, stdio: ["ignore", "pipe", "pipe"] });
-    const port = await new Promise((resolve) => child.stdout.on("data", (b) => { const m = String(b).match(/listening (\d+)/); if (m) resolve(Number(m[1])); }));
-    return { url: `http://127.0.0.1:${port}`, stop: () => child.kill() };
-  }
   const h = await startHttp("ok");
   const a = resolveAgent(h.url);
   const out = await playOne(a);
@@ -148,4 +149,70 @@ test("http adapter plays, treats non-200 as invalid, times out, and rejects a pr
   h4.stop();
 
   await assert.rejects(resolveAgent("http://127.0.0.1:1").hello(), AdapterError);
+});
+
+test("subprocess: an over-size stdout line (§5.1, LINE_CAP) is invalid and retried", async () => {
+  const cmd = `"${process.execPath}" "${FIX("agent-echo.js")}"`;
+  process.env.MODE = "huge";
+  const a = resolveAgent("cmd:" + cmd);
+  await a.hello();
+  const s = engine.step(engine.createGame({ players: P2, seed: 4 }), { type: "start_round" }).state;
+  const d = await decide(a, { gameView: observeGame(s, engine.pendingPlayer(s)), gameId: "t", timeoutMs: 1000 });
+  assert.equal(d.attempts.length, 2);
+  assert.equal(d.attempts[0].outcome, "invalid");
+  assert.equal(d.attempts[1].outcome, "ok");
+  await a.shutdown();
+  delete process.env.MODE;
+});
+
+test("http: an over-size /move body (BODY_CAP) is invalid and retried", async () => {
+  const h = await startHttp("huge");
+  const a = resolveAgent(h.url);
+  await a.hello();
+  const s = engine.step(engine.createGame({ players: P2, seed: 4 }), { type: "start_round" }).state;
+  const d = await decide(a, { gameView: observeGame(s, engine.pendingPlayer(s)), gameId: "t", timeoutMs: 1000 });
+  assert.equal(d.attempts.length, 2);
+  assert.equal(d.attempts[0].outcome, "invalid");
+  assert.match(d.attempts[0].raw_response, /^reply body over 64 KB/);
+  assert.equal(d.attempts[1].outcome, "ok");
+  h.stop();
+});
+
+test("subprocess: shutdown() kills a hung process (§8) and leaves no orphan", async () => {
+  const cmd = `"${process.execPath}" "${FIX("agent-echo.js")}"`;
+  process.env.MODE = "hang-shutdown";
+  const a = resolveAgent("cmd:" + cmd);
+  await a.hello();
+  const started = Date.now();
+  await a.shutdown();
+  assert.ok(Date.now() - started < 4000, "shutdown should resolve within a few seconds of the 2s kill timeout");
+  // The exit handler (registered in hello()) records the exit before shutdown()'s own
+  // listener resolves, so the process is already marked exited: a subsequent move()
+  // must reject with an AdapterError mentioning the exit rather than hanging again.
+  await assert.rejects(
+    a.move({ request_id: "x", request: {} }, 1000),
+    (err) => err instanceof AdapterError && /exited/.test(err.message),
+  );
+  delete process.env.MODE;
+});
+
+test("in-process: a reply that resolves after the deadline is ignored, and a later decide succeeds", async () => {
+  process.env.BAD_MODE = "late";
+  const a = resolveAgent("file:" + FIX("agent-bad.js") + "?fresh=3");
+  await a.hello();
+  const s = engine.step(engine.createGame({ players: P2, seed: 4 }), { type: "start_round" }).state;
+  let unhandled = null;
+  const onUnhandled = (err) => { unhandled = err; };
+  process.on("unhandledRejection", onUnhandled);
+  const d = await decide(a, { gameView: observeGame(s, engine.pendingPlayer(s)), gameId: "t", timeoutMs: 30 });
+  assert.equal(d.attempts[0].outcome, "timeout");
+  assert.equal(d.fallback_used, true);
+  assert.equal(d.action, "stay");
+  // Give the fixture's ~150ms-late promise time to settle after the timeout fired.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  process.removeListener("unhandledRejection", onUnhandled);
+  assert.equal(unhandled, null, "the late resolution must not surface as an unhandled rejection or a thrown error");
+  const d2 = await decide(a, { gameView: observeGame(s, engine.pendingPlayer(s)), gameId: "t", timeoutMs: 1000 });
+  assert.equal(d2.attempts[0].outcome, "ok");
+  delete process.env.BAD_MODE;
 });
