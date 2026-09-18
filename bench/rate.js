@@ -59,7 +59,8 @@ function rateRuns(dirs) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   const outIdx = args.indexOf("--out");
-  const outFile = outIdx >= 0 ? args.splice(outIdx, 2)[1] : "ratings.json";
+  // `--out` as the last argument has no value: splice returns ["--out"] and the file name is undefined.
+  const outFile = (outIdx >= 0 ? args.splice(outIdx, 2)[1] : null) || "ratings.json";
   if (!args.length) { console.error("usage: node bench/rate.js <results-dir>... [--out ratings.json]"); process.exit(1); }
   const res = rateRuns(args);
   console.log("name                 version   mu      sigma   conservative  games");

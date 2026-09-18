@@ -23,7 +23,9 @@ function create(spec, command) {
   // that keeps this adapter's stdio pipes open — discovered via a test that spawns an agent
   // ignoring stdin close and asserts shutdown() actually ends it. taskkill /t kills the tree.
   function killChild() {
-    if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" });
+    // A failed spawn (taskkill missing from PATH) emits "error" on the child process object; with no
+    // listener that is an unhandled error event and takes the runner down during shutdown.
+    if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" }).on("error", () => {});
     else child.kill("SIGKILL");
   }
 
@@ -88,11 +90,12 @@ function create(spec, command) {
       if (!child || exit) return;
       child.stdin.end();
       await new Promise((resolve) => {
+        let hardStop = null;
         const finish = () => { clearTimeout(t); clearTimeout(hardStop); resolve(); };
-        const t = setTimeout(killChild, 2000);
-        // taskkill runs as its own short-lived process, so its effect is not instant; give it
-        // a bit more room than a plain signal before giving up and returning control anyway.
-        const hardStop = setTimeout(finish, 3000);
+        // taskkill runs as its own short-lived process, so its effect is not instant; the hard stop is
+        // armed from inside the kill step, so it always allows ~2 s *after* the kill rather than
+        // counting from the start of shutdown (where a slow stdin close would eat most of it).
+        const t = setTimeout(() => { killChild(); hardStop = setTimeout(finish, 2000); }, 2000);
         child.once("exit", finish);
       });
     },

@@ -13,5 +13,5 @@ export function render(state, ctx) {
   $("startBtn").disabled = state.seats.length < 2;
   $("addBotBtn").onclick = () => ctx.send({ type: "add-bot" });
   $("startBtn").onclick = () => ctx.send({ type: "start-game" });
-  $("copyLinkBtn").onclick = async () => { try { await navigator.clipboard.writeText(location.href); ctx.toast("Link copied"); } catch { ctx.toast(location.href); } };
+  $("copyLinkBtn").onclick = ctx.copyLink;
 }

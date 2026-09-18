@@ -33,8 +33,12 @@
 
   <section id="joinView" class="view" hidden>
     <h2>Join room <span class="code-inline" data-room></span></h2>
+    <p class="hint">Share the link so a friend can take a seat too.</p>
     <label>Your name <input id="joinName" maxlength="16"></label>
-    <button id="joinBtn" class="primary">Sit down</button>
+    <div class="actions">
+      <button id="joinBtn" class="primary">Sit down</button>
+      <button id="joinCopyLinkBtn">Copy link</button>
+    </div>
     <p id="joinError" class="error" hidden></p>
   </section>
 
