@@ -35,7 +35,13 @@ node bench/run.js --agent http://localhost:8080 --suite smoke
 node bench/run.js --agent "cmd:python agents/examples/subprocess.py" --suite smoke
 ```
 
-Each run writes `bench/results/<runId>/games.jsonl` and `summary.json`. Rate multiple agents against each other with `node bench/rate.js bench/results/*`, and verify a run's determinism with `node bench/replay.js bench/results/<runId>/games.jsonl`.
+Each run writes `bench/results/<runId>/games.jsonl` and `summary.json`, plus `run-private.json` — the seeds, which are deliberately kept out of the log an agent can read (see the trust boundary in the protocol doc). Rate multiple agents against each other with `node bench/rate.js bench/results/*`, and verify a run's determinism with `node bench/replay.js bench/results/<runId>/games.jsonl`, which reads `run-private.json` from the same directory.
+
+`bench/results/*` is expanded by the **shell**, not by `rate.js`, so that command needs a shell that globs — bash, zsh, or Git Bash on Windows. PowerShell passes the pattern through unexpanded, so name the directories explicitly instead:
+
+```powershell
+node bench/rate.js (Get-ChildItem bench/results -Directory).FullName
+```
 
 An agent can also take a seat in a live room instead of a benchmark suite:
 

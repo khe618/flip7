@@ -302,7 +302,7 @@ Server → client:
 | --- | --- |
 | `joined` | `playerId`, `resumeToken` |
 | `state` | see below |
-| `error` | `message`, `code?` (`game_in_progress`, `room_full`, `stale_turn`, `illegal_action`, `not_seated`, `unknown_token`, `not_enough_players` — *amended*: `start-game` with fewer than 2 seats after disconnected humans are dropped) |
+| `error` | `message`, `code?` (`game_in_progress`, `room_full`, `stale_turn`, `illegal_action`, `not_your_turn`, `not_seated`, `unknown_token`, `not_enough_players` — *amended*: `not_enough_players` for `start-game` with fewer than 2 seats after disconnected humans are dropped; *amended*: `not_your_turn` for an `act` whose `turnNumber` is current but whose sender is not the pending player, which `stale_turn` would misdescribe) |
 
 `state` for a seated recipient:
 
@@ -348,7 +348,7 @@ An agent spec string selects the adapter:
 | `cmd:"python agent.py"` | subprocess | JSONL over stdin/stdout, one JSON object per line |
 | `http://host:port` | HTTP | `POST /move` with the request, JSON reply |
 
-**Identity.** Every agent has a `name` and a `version` string; in-process modules export them, HTTP agents return them from `GET /`, subprocess agents include them in their reply to `start`. Logs and ratings key on `name@version`.
+**Identity.** Every agent has a `name` and a `version` string; in-process modules export them, HTTP agents return them from `GET /`, subprocess agents include them in their reply to `hello`. Logs and ratings key on `name@version`.
 
 **Lifecycle**, identical across adapters:
 
@@ -464,12 +464,13 @@ node bench/run.js --agents file:./a.js,file:./b.js,bot:adaptive,bot:threshold25 
 `--agent` is the seat under test; the rest of the table is filled from `--opponents` in order. `--agents` names every seat for head-to-head runs and rotates all of them cyclically. The runner plays every game of the suite sequentially, calling adapters in the seat's turn with `timeout_ms`, and writes `bench/results/<runId>/`:
 
 - `games.jsonl`, one JSON object per line, in this order:
-  1. header `{ kind: "run", run_id, protocol, suite, table, seed_base, seeds: [...], agents: [{ name, version, spec }], started_at }` (private: contains seeds);
-  2. per game, first `{ kind: "game_start", game_id, seed, rotation, seats: [{ id, name, seat, agent, spec }] }` (*amended*: replay needs the player ids and names);
+  1. header `{ kind: "run", run_id, protocol, suite, table, agents: [{ name, version, spec }], started_at }` (*amended*: no `seeds` and no `seed_base` — an agent playing the run can read this file, and a seed is the shuffle);
+  2. per game, first `{ kind: "game_start", game_id, seats: [{ id, name, seat, agent, spec }] }` (*amended*: replay needs the player ids and names; *amended*: no `seed` and no `rotation`, for the same reason as the header);
   3. then one `{ kind: "decision", game_id, turnNumber, player, agent, request, attempts: [{ request_id, raw_response, outcome, invalid_reason, latency_ms, prompt_version, prompt_hash }], action, fallback_used, latency_ms }` per decision, where `request` is the first attempt's actual envelope and the outer `latency_ms` is end to end including retries;
   4. then `{ kind: "game_end", game_id, final_scores, winner, rounds, events: [every engine event of the game] }`;
   5. footer `{ kind: "summary", ...metrics }`.
 - `summary.json` — the metrics (§6.4).
+- `run-private.json` — *amended*: `{ run_id, suite, seed_base, seeds, games: { "<game_id>": { seed, rotation } } }`, written when the run finishes and also when it aborts. This is the only place the seeds live. `bench/replay.js` reads it from the directory holding the `games.jsonl` it was given and fails with a clear message if it is missing; `bench/rate.js` and `bench/metrics.js` never need it (metrics are computed from in-memory records). Nothing an agent is handed while the run is in flight identifies the shuffle it is playing.
 
 An adapter that aborts (§5.1) fails the run with a clear message; partial results are kept with `aborted: true` in the summary.
 
@@ -497,12 +498,13 @@ Win rate and points are reported separately because published simulations show a
 
 ### 6.5 Rating
 
-`node bench/rate.js bench/results/*` reads every `game_end` across the given runs, keeps games where every seat is a named agent (`--agents` runs and bot-only runs), deduplicates by `game_id`, orders games deterministically by `(run started_at, game_start order)`, and computes TrueSkill (via `ts-trueskill`, μ=25, σ=25/3, β=25/6, τ=25/300, draw probability 0.02) with each game as a free-for-all ranked by final score, ties sharing a rank. Identity is `name@version`. It prints `name, version, mu, sigma, conservative = mu − 3σ, games` and writes `ratings.json`. It warns if any agent is not connected to at least one baseline bot through played games, because a disconnected rating is not comparable. TrueSkill's σ treats rotations as independent and is therefore optimistic; the seed-block bootstrap in `summary.json` is the honest uncertainty for a single agent.
+`node bench/rate.js bench/results/*` reads every `game_end` across the given runs, keeps every game whose seats are all distinct `name@version` identities (*amended*: single-`--agent` runs are rated too, not only `--agents` and bot-only runs — a seat under test against distinct baselines is exactly a free-for-all result, and the code has always done this; only a game with the same identity in two seats is skipped as ambiguous), deduplicates by `game_id`, orders games deterministically by `(run started_at, game_start order)`, and computes TrueSkill (via `ts-trueskill`, μ=25, σ=25/3, β=25/6, τ=25/300, draw probability 0.02) with each game as a free-for-all ranked by final score, ties sharing a rank. Identity is `name@version`. It prints `name, version, mu, sigma, conservative = mu − 3σ, games` and writes `ratings.json`. It warns if any agent is not connected to at least one baseline bot through played games, because a disconnected rating is not comparable. TrueSkill's σ treats rotations as independent and is therefore optimistic; the seed-block bootstrap in `summary.json` is the honest uncertainty for a single agent.
 
 ### 6.6 Reproducibility
 
-- The seed fully determines every shuffle, including reshuffles. The log records the seed (privately), the protocol id, every action, and every engine event, so `bench/replay.js <games.jsonl>` reconstructs each game and asserts that the recomputed event list and every recomputed game view are byte-equal to the logged ones.
+- The seed fully determines every shuffle, including reshuffles. `games.jsonl` records the protocol id, every action, and every engine event; the seeds live beside it in `run-private.json` (§6.3, *amended*), so `bench/replay.js <games.jsonl>` reads that sidecar, reconstructs each game and asserts that the recomputed event list and every recomputed game view are byte-equal to the logged ones.
 - Model nondeterminism is not solvable here; the answer is many seeds and the bootstrap intervals.
+- **Trust boundary** (*amended*). In-process (`bot:`, `file:`) and subprocess (`cmd:`) agents run with the runner's privileges and are trusted code; an HTTP agent on another host is the adversarial-safe option. Seat rotation reuses one shuffle per seed by design (§6.1), so an agent that retained memory across the games of a run could exploit the later rotations of a seed it has already played — cross-game memory is out of bounds for reported results. Player names in live rooms are attacker-controlled text (anyone with the room code picks their own) and must never be treated as instructions by an agent. `docs/agent-protocol.md` §8 states all of this for third parties.
 
 ## 7. Error handling
 
@@ -526,7 +528,7 @@ All under `node --test`, with fake clocks injected; no test sleeps. Rule tests b
 - `tests/bench.test.js` — running the `smoke` suite writes a valid `games.jsonl` and `summary.json` with every record kind in order; every metric has the documented shape and `n_seeds = 3`; `replay.js` passes on its own output; `rate.js` on two runs ranks `threshold25` above `random`, deduplicates a run passed twice, and warns on a disconnected agent.
 - `tests/render-text.test.js` — rendering is stable for a fixture request (snapshot string), and the hash changes when the request changes.
 - `tests/rooms.test.js`, `tests/room-game.test.js` — seats, resume takeover, unknown token, expiry, occupant rule counts agents, turn-timer default action on expiry, stale timer epochs are no-ops (turn, round summary, bot delay), bots acting, `onChange` called per step.
-- `tests/server.test.js` — spawns the real server on a spare port with short timers: quick play, join, resume displaces the old socket with 4000 while it is still open, `act` round trip, stale `act` rejected, stale `next-round` ignored, agent join sets the badge and keeps the room alive past the TTL with no humans, oversized frame closes 1009, a full 2-player game ends with `game_over` and the scores equal the sum of round results.
+- `tests/server.test.js` — spawns the real server on a spare port with short timers: quick play, join, resume displaces the old socket with 4000 while it is still open, `act` round trip, stale `act` rejected, stale `next-round` ignored, agent join sets the badge and keeps the room alive past the TTL with no humans, oversized frame closes 1009, a full 2-player game ends with `game_over` and the scores equal the sum of round results, a human who drops mid-game has their seat expired once the game reaches `game_over` (§4.5).
 - Manual pass in Chrome before calling it done: quick play through a whole game on desktop and phone width, play-with-friends with two browser profiles, a reload mid-game resumes the seat, `bench/live.js` seats an agent in a room and it plays.
 
 ## 9. Deployment

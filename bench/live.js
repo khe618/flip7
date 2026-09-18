@@ -82,7 +82,7 @@ function driveLiveSeat({ url, room, spec, name, log = console.log }) {
       if (msg.type === "joined") { you = msg.playerId; token = msg.resumeToken; log(`seated as ${you} in room ${room}`); }
       else if (msg.type === "state") onState(msg);
       else if (msg.type === "error") {
-        if (msg.code === "stale_turn" || msg.code === "illegal_action") stats.serverErrors += 1;
+        if (msg.code === "stale_turn" || msg.code === "illegal_action" || msg.code === "not_your_turn") stats.serverErrors += 1;
         log(`server error: ${msg.code || ""} ${msg.message}`);
       }
     });
