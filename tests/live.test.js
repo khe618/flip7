@@ -40,6 +40,8 @@ test("an in-process agent takes a live seat, plays a whole game against bots, an
   const result = await Promise.race([driver.done, new Promise((_, reject) => setTimeout(() => reject(new Error("game did not finish within 60 s")), 60000).unref())]);
   assert.ok(result.results && result.results.winner);
   assert.ok(driver.stats.decisions > 3);
-  assert.equal(driver.stats.duplicateTurns, 0);
+  assert.equal(driver.stats.acts, driver.stats.decisions);
+  assert.equal(driver.stats.serverErrors, 0);
+  assert.ok(driver.stats.acts >= 1);
   await driver.close(); ws.close();
 });

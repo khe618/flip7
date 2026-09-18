@@ -5,13 +5,15 @@ const { decide } = require("../agents/decide");
 const { PROTOCOL } = require("../lib/request");
 
 // Drives one adapter as a seat in a live room over the browser's own protocol.
-// Lifecycle: hello once; start when the first playing state of a game arrives; end on game_over;
-// shutdown on close(). An act is sent at most once per turnNumber per game.
+// Lifecycle: hello once; start exactly once per game, on the first `playing` state seen since
+// the last lobby/game_over (this also covers joining or reconnecting mid-game, where that first
+// playing state may not be turn 1); end exactly once on game_over; shutdown on close(). An act is
+// sent at most once per turnNumber per game.
 function driveLiveSeat({ url, room, spec, name, log = console.log }) {
   const adapter = resolveAgent(spec);
-  const stats = { decisions: 0, duplicateTurns: 0, fallbacks: 0 };
+  const stats = { decisions: 0, acts: 0, repeatedStates: 0, fallbacks: 0, serverErrors: 0 };
   let ws = null, you = null, token = null, closed = false, delay = 1000, reconnectTimer = null;
-  let busy = false, latest = null, gameSerial = 0, startedSerial = 0;
+  let busy = false, latest = null, gameSerial = 0, inGame = false;
   const acted = new Set();
   let resolveDone, rejectDone;
   const done = new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject; });
@@ -21,30 +23,36 @@ function driveLiveSeat({ url, room, spec, name, log = console.log }) {
   function send(obj) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 
   async function handle(msg) {
+    if (msg.phase === "lobby") { inGame = false; return; }
     const g = msg.game;
     if (!g) return;
-    if (g.round === 1 && g.turnNumber >= 1 && msg.phase === "playing" && startedSerial === gameSerial) {
-      // first state of a new game in this room
+    if (msg.phase === "playing" && !inGame) {
+      // First playing state seen since the last lobby/game_over: a fresh game, or joining/
+      // reconnecting mid-game. Either way this is the start of watching one game.
       gameSerial += 1;
       acted.clear();
+      inGame = true;
       await adapter.start({ type: "start", protocol: PROTOCOL, game_id: `${room}#${gameSerial}`, you, players: g.players.map((p) => ({ id: p.id, name: p.name, seat: p.seat })) });
-      startedSerial = gameSerial;
     }
-    if (msg.phase === "game_over" && msg.results) {
-      const finalScores = Object.fromEntries(g.players.map((p) => [p.id, p.score]));
-      await adapter.end({ type: "end", game_id: `${room}#${gameSerial}`, result: { final_scores: finalScores, winner: g.winner, rounds: g.round } });
+    if (msg.phase === "game_over") {
+      if (inGame) {
+        const finalScores = Object.fromEntries(g.players.map((p) => [p.id, p.score]));
+        await adapter.end({ type: "end", game_id: `${room}#${gameSerial}`, result: { final_scores: finalScores, winner: g.winner, rounds: g.round } });
+        inGame = false;
+      }
       resolveDone(msg);
       return;
     }
     if (!g.decision || g.current_player !== you) return;
-    if (acted.has(g.turnNumber)) { stats.duplicateTurns += 1; return; }
+    if (acted.has(g.turnNumber)) { stats.repeatedStates += 1; return; }
     const remaining = msg.timer ? msg.timer.remainingMs : 30000;
     const timeoutMs = Math.max(1, remaining - 250);
     const d = await decide(adapter, { gameView: g, gameId: `${room}#${gameSerial}`, timeoutMs, retry: false });
     stats.decisions += 1;
     if (d.fallback_used) stats.fallbacks += 1;
-    if (acted.has(g.turnNumber)) { stats.duplicateTurns += 1; return; }
+    if (acted.has(g.turnNumber)) { stats.repeatedStates += 1; return; }
     acted.add(g.turnNumber);
+    stats.acts += 1;
     send({ type: "act", turnNumber: g.turnNumber, action: d.action });
   }
 
@@ -73,7 +81,10 @@ function driveLiveSeat({ url, room, spec, name, log = console.log }) {
       let msg; try { msg = JSON.parse(String(b)); } catch { return; }
       if (msg.type === "joined") { you = msg.playerId; token = msg.resumeToken; log(`seated as ${you} in room ${room}`); }
       else if (msg.type === "state") onState(msg);
-      else if (msg.type === "error") log(`server error: ${msg.code || ""} ${msg.message}`);
+      else if (msg.type === "error") {
+        if (msg.code === "stale_turn" || msg.code === "illegal_action") stats.serverErrors += 1;
+        log(`server error: ${msg.code || ""} ${msg.message}`);
+      }
     });
     ws.on("error", (err) => log("socket error", err.message));
     ws.on("close", (code) => {
@@ -86,6 +97,10 @@ function driveLiveSeat({ url, room, spec, name, log = console.log }) {
 
   return {
     done, stats,
+    // Test-only seam: feed a synthetic `state` message through the exact same handling path a
+    // real ws message takes (onState -> handle), without a live connection. Used by
+    // tests/live-unit.test.js to verify start()/end() call counts without a real server.
+    _handleState: onState,
     async close() {
       closed = true;
       clearTimeout(reconnectTimer);
