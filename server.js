@@ -32,7 +32,17 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: config.MAX_PAYLOAD });
 
 function send(ws, obj) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj)); }
+// room-game's own onChange (armed by act/start-game/next-round, called synchronously) and the
+// trailing broadcast after every ws message can both fire for the same underlying change, which
+// would otherwise send two `state` frames to every recipient for one change (this raced: the
+// second frame's `timer.remainingMs` is computed fresh and can differ by a millisecond from the
+// first, so comparing rendered JSON to dedupe was not reliable). A live agent driver treats each
+// `state` as a fresh thing to react to, so a duplicate looks like a second, already-answered
+// decision. `room._broadcastTick` is bumped on every actual broadcast; the ws message handler
+// records the tick before dispatching and skips its trailing broadcast if onChange already
+// bumped it during that synchronous call.
 function broadcast(room) {
+  room._broadcastTick = (room._broadcastTick || 0) + 1;
   for (const seat of room.seats.values()) if (seat.ws) send(seat.ws, buildState(room, seat.id));
   for (const ws of room.visitors) send(ws, buildState(room, null));
 }
@@ -88,6 +98,7 @@ wss.on("connection", (ws, req) => {
     // Re-resolve the room: the registry may have deleted and recreated it under us.
     if (registry.get(room.code) !== room) { room = registry.getOrCreate(room.code); registry.attachVisitor(room, ws); seat = null; }
     if (seat && seat.ws !== ws) return; // displaced socket
+    const tickBefore = room._broadcastTick || 0; // room-game's onChange may already broadcast below
     try {
       switch (msg.type) {
         case "resume": {
@@ -118,7 +129,7 @@ wss.on("connection", (ws, req) => {
     } catch (err) {
       send(ws, { type: "error", code: err.code || "error", message: err.message });
     }
-    if (registry.get(room.code) === room) broadcast(room);
+    if (registry.get(room.code) === room && (room._broadcastTick || 0) === tickBefore) broadcast(room);
   });
 
   ws.on("close", () => {
