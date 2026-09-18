@@ -1,7 +1,7 @@
 # Flip 7 — design spec
 
 **Date:** 2026-09-17
-**Status:** approved 2026-09-17 (Codex-reviewed)
+**Status:** approved 2026-09-17 (Codex-reviewed); amended 2026-09-18 after plan review (marked *amended* below)
 **Scope:** v1 of a real-time multiplayer Flip 7 website plus an agent-playable harness and benchmark.
 
 ## 1. What this is
@@ -45,7 +45,7 @@ There are exactly four zones: the **deck** (face down, order hidden), the **disc
 
 - The deck is shuffled once at game start. It persists across rounds. It is **not** reshuffled at the start of a round.
 - At the end of a round every line is moved to the discard pile, seat by seat in seat order, each line in the order numbers ascending, then modifiers, then Second Chance.
-- When a card must be flipped and the deck is empty, the whole discard pile is shuffled with the engine RNG to form the new deck (`reshuffle` event). Lines are never reshuffled. If the deck and the discard pile are both empty, the flip is skipped (`deck_exhausted` event): a hit becomes a stay, a Flip Three ends early. This cannot happen with 94 cards and six players, but the engine must not crash.
+- When a card must be flipped and the deck is empty, the whole discard pile is shuffled with the engine RNG to form the new deck (`reshuffle` event). Lines are never reshuffled. If the deck is empty and the discard pile is empty **or holds only action cards** (*amended*: reshuffling only action cards would re-flip them forever), the flip is skipped (`deck_exhausted` event): a hit becomes a stay, a Flip Three ends early. This cannot happen with 94 cards and six players, but the engine must stay finite.
 - An action card enters the discard pile **the moment it is flipped**, before it is resolved. What remains to be resolved is tracked in the resolution stack (§4.3), not by where the card sits. The one exception is Second Chance, which goes to the drawer's line if kept, to the recipient's line if given, and to the discard if neither.
 
 Because of this, the cards not visible in any line or in the discard pile are exactly the cards in the deck. That identity is the normative "unseen cards" formula for bots and agents (§6.2).
@@ -249,10 +249,11 @@ A resolution **frame** is one action card being resolved:
   drawer: id,                               // who flipped it (chooses the target)
   target: null | id,
   remaining: 0..3,                          // flip_three only: cards still to flip
-  setAside: [card...] }                     // flip_three only: in flip order
+  setAside: [card...],                      // flip_three only: in flip order, not yet resolved
+  ended: bool }                             // flip_three only: the three flips are done (amended)
 ```
 
-Resolution algorithm: flipping an action card pushes a frame. The top frame drives the engine: if it has no target, `pending` becomes `choose_target` for the frame's drawer (or the frame is auto-targeted when only one candidate exists, including when the drawer is the only active player). A `flip_three` frame with a target flips cards while `remaining > 0`; an action card flipped during it either pushes a `second_chance` frame on top (resolved immediately) or is appended to `setAside`. When `remaining` reaches 0 and the target is still active, each `setAside` card in order is pushed as a new frame with `drawer = target`, and resolved fully before the next; if the target busted or the round ended, the frame is popped without pushing. When the stack is empty, play resumes from `dealCursor` if non-null, else from the seat after `turnSeat`. This represents any depth of nesting.
+Resolution algorithm: flipping an action card pushes a frame. The top frame drives the engine: if it has no target, `pending` becomes `choose_target` for the frame's drawer (or the frame is auto-targeted when only one candidate exists, including when the drawer is the only active player). A `flip_three` frame with a target flips cards while `remaining > 0`; an action card flipped during it either pushes a `second_chance` frame on top (resolved immediately) or is appended to `setAside`. When `remaining` reaches 0 the frame is marked `ended` and stays on the stack as a continuation (*amended*): if the target busted, its `setAside` list is cleared; otherwise each `setAside` card in order is shifted off and pushed as a new frame with `drawer = target`, resolved fully before the next is pushed, so the public stack never shows a later set-aside card as a frame. The continuation is popped when its `setAside` list is empty. If the round ended, the whole stack is cleared. When the stack is empty, play resumes from `dealCursor` if non-null, else from the seat after `turnSeat`. This represents any depth of nesting.
 
 Events (each `{ type, ...fields, turnNumber }`): `round_started {roundNumber, dealer}`, `dealt {player, card}`, `hit {player, card}`, `stay {player}`, `bust {player, card}`, `second_chance_saved {player, card}`, `second_chance_kept {player}`, `second_chance_given {from, to}`, `second_chance_discarded {player}`, `freeze {from, to}`, `flip_three_started {from, to}`, `flip_three_card {player, card}`, `flip_three_ended {player}`, `set_aside {player, card}`, `flip7 {player}`, `reshuffle {count}`, `deck_exhausted {player}`, `round_ended {results}`, `game_over {winner, scores}`. The field is `turnNumber` everywhere: engine history, observation history, and logs.
 
@@ -360,7 +361,7 @@ An agent spec string selects the adapter:
 | `shutdown` | once per run | — | 2 s | forced |
 
 - **In-process:** `hello` loads the module; `start`/`end` call the optional hooks; `shutdown` is a no-op. A promise still pending after its deadline is ignored when it settles.
-- **Subprocess:** one process per run, spawned at `hello`. Runner → agent lines are the payloads above; the agent answers `hello` with `{"name","version","protocol"}` and each `move` with `{"request_id","action"}`; it may answer `start`/`end` with anything or nothing. Replies are matched by `request_id`; a reply with an unknown or already-settled `request_id` is logged and discarded, so a late answer can never be consumed by the next move. Stdout lines over 64 KB are an invalid reply. Stderr is captured into the log, capped at 1 MB per run. `shutdown` closes stdin, waits 2 s, then kills. If the process exits during a run, the run aborts with its exit code and last stderr.
+- **Subprocess:** one process per run, spawned at `hello`. Runner → agent lines are the payloads above; the agent answers `hello` with `{"name","version","protocol"}` and each `move` with `{"request_id","action"}`; it may answer `start`/`end` with anything or nothing. Replies are matched by `request_id`; a reply with an unknown or already-settled `request_id` is logged and discarded, so a late answer can never be consumed by the next move. A line with no `request_id` at all (non-JSON, or JSON without the field) is attributed to the single pending request when exactly one is pending and judged invalid, and discarded otherwise (*amended*; always echo `request_id`). Stdout lines over 64 KB are an invalid reply. Stderr is captured into the log, capped at 1 MB per run. `shutdown` closes stdin, waits 2 s, then kills. If the process exits during a run, the run aborts with its exit code and last stderr.
 - **HTTP:** `hello` is `GET /` → `{ "name", "version", "protocol" }` (a protocol mismatch aborts the run). `start` and `end` are `POST /start` and `POST /end` with the payload as the body; replies are ignored. `move` is `POST /move` with `{ "request_id", "request" }`; the reply must be status 200 with JSON `{ "action" }` (`request_id` optional), at most 64 KB. Any other status, a non-JSON body, or a connection error is an invalid reply. A reply after the deadline is a timeout and the connection is dropped.
 
 The request and action are byte-identical across all three adapters.
@@ -464,8 +465,8 @@ node bench/run.js --agents file:./a.js,file:./b.js,bot:adaptive,bot:threshold25 
 
 - `games.jsonl`, one JSON object per line, in this order:
   1. header `{ kind: "run", run_id, protocol, suite, table, seed_base, seeds: [...], agents: [{ name, version, spec }], started_at }` (private: contains seeds);
-  2. per game, first `{ kind: "game_start", game_id, seed, rotation, seats: [{ seat, agent }] }`;
-  3. then one `{ kind: "decision", game_id, turnNumber, player, agent, request, attempts: [{ request_id, raw_response, outcome, invalid_reason, latency_ms, prompt_version, prompt_hash }], action, fallback_used, latency_ms }` per decision, where the outer `latency_ms` is end to end including retries;
+  2. per game, first `{ kind: "game_start", game_id, seed, rotation, seats: [{ id, name, seat, agent, spec }] }` (*amended*: replay needs the player ids and names);
+  3. then one `{ kind: "decision", game_id, turnNumber, player, agent, request, attempts: [{ request_id, raw_response, outcome, invalid_reason, latency_ms, prompt_version, prompt_hash }], action, fallback_used, latency_ms }` per decision, where `request` is the first attempt's actual envelope and the outer `latency_ms` is end to end including retries;
   4. then `{ kind: "game_end", game_id, final_scores, winner, rounds, events: [every engine event of the game] }`;
   5. footer `{ kind: "summary", ...metrics }`.
 - `summary.json` — the metrics (§6.4).
@@ -552,3 +553,4 @@ Render web service defined by `render.yaml` copied from follow-suit with the nam
 - **Sequential games in the runner**: parallel games would only matter for slow HTTP agents and complicate latency measurement; deferred to `IDEAS.md`.
 - **Turn timer defaults to stay**: in Flip 7 staying is always legal on your turn and is the conservative choice a disconnected player would want.
 - **Dropped from earlier drafts**: a separate agent auth token for live rooms (room codes already gate humans the same way), spectators, a per-room configurable target score, Wilson intervals over games.
+- **Amendments of 2026-09-18** (from the Codex review of the implementation plan, whose code was executed end to end before adoption): the game view carries `phase`, `current_player`, `results`, `winner` because the browser renders from it; set-aside cards become frames one at a time via an `ended` continuation so the public stack is honest; an action-only discard pile is not reshuffled; `game_start.seats` carries ids and names for replay; id-less subprocess replies count as invalid attempts for the sole pending request.
