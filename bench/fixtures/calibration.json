@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-09-18T04:50:13.027Z",
+  "lineup": [
+    "bot:threshold25",
+    "bot:bustRisk25",
+    "bot:evOneStep",
+    "bot:adaptive"
+  ],
+  "smoke": {
+    "threshold25@1": {
+      "mean_score_per_round": 19.504950495049506,
+      "bust_rate": 0.297029702970297,
+      "win_rate": 0.16666666666666666
+    },
+    "bustRisk25@1": {
+      "mean_score_per_round": 18.386138613861387,
+      "bust_rate": 0.33663366336633666,
+      "win_rate": 0.25
+    },
+    "evOneStep@1": {
+      "mean_score_per_round": 20.861386138613863,
+      "bust_rate": 0.297029702970297,
+      "win_rate": 0.25
+    },
+    "adaptive@1": {
+      "mean_score_per_round": 20.198019801980198,
+      "bust_rate": 0.31683168316831684,
+      "win_rate": 0.3333333333333333
+    }
+  },
+  "standard200": {
+    "threshold25@1": {
+      "mean_score_per_round": 19.550715900527507,
+      "bust_rate": 0.2899773926149209,
+      "win_rate": 0.14
+    },
+    "bustRisk25@1": {
+      "mean_score_per_round": 20.80542577241899,
+      "bust_rate": 0.3151469480030143,
+      "win_rate": 0.29875
+    },
+    "evOneStep@1": {
+      "mean_score_per_round": 20.85501130369254,
+      "bust_rate": 0.26510926902788245,
+      "win_rate": 0.27125
+    },
+    "adaptive@1": {
+      "mean_score_per_round": 18.713187641296155,
+      "bust_rate": 0.4141672946495855,
+      "win_rate": 0.29
+    }
+  }
+}
