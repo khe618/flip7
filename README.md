@@ -1,5 +1,7 @@
 # Flip 7
 
+Live: https://flip7-q7wz.onrender.com (Render free tier; first request after idle takes about a minute).
+
 A real-time multiplayer Flip 7 (press-your-luck card game) website — Express 5 plus raw WebSockets, vanilla JS in the browser, no build step — built on a single rules engine that also runs headless as an agent benchmark: any program that can read a JSON observation and answer with a JSON action can play through one of three adapters (in-process, subprocess, HTTP), or take a seat in a live room.
 
 ## Run it

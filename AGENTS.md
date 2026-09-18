@@ -7,5 +7,5 @@ Flip 7: real-time multiplayer card game (Express 5 + ws, vanilla JS, no build st
 - `lib/engine.js` is the only rules implementation. `lib/view.js` is the only secrecy boundary: `deck`, `rngState`, and `seed` never leave it.
 - Every `lib/` factory takes injected `now/setTimeout/clearTimeout/random`; tests never sleep.
 - The app shell `public/index.html` is read once at startup; restart the server after editing it.
-- Deploy: Render web service via `render.yaml`, auto-deploy from `main`. Free tier sleeps and forgets rooms.
+- Deploy: Render web service `flip7` via `render.yaml`, auto-deploy from `main`; live at https://flip7-q7wz.onrender.com (the bare `flip7` subdomain was taken). Free tier sleeps and forgets rooms.
 - Read `LEARNINGS.md` before debugging or editing.
