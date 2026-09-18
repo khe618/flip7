@@ -8,6 +8,15 @@ const WebSocket = require("ws");
 let PORT = 0;   // the server picks a free port (PORT=0) and logs it
 let child;
 
+function waitForPort(proc) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("server did not start within 10 s")), 10000);
+    proc.stdout.on("data", (b) => { const m = String(b).match(/running at http:\/\/localhost:(\d+)/); if (m) { clearTimeout(t); resolve(Number(m[1])); } });
+    proc.stderr.on("data", (b) => process.stderr.write(b));
+    proc.on("exit", (code) => { clearTimeout(t); reject(new Error(`server exited ${code}`)); });
+  });
+}
+
 test.before(async () => {
   child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
     // ROUND_SUMMARY_MS is long so the full-game test drives next-round itself and never misses a summary.
@@ -17,20 +26,15 @@ test.before(async () => {
     env: { ...process.env, PORT: "0", RESUME_TTL_MS: "400", TURN_MS: "2000", ROUND_SUMMARY_MS: "5000", BOT_DELAY_MIN_MS: "5", BOT_DELAY_MAX_MS: "10" },
     stdio: ["ignore", "pipe", "pipe"],
   });
-  PORT = await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("server did not start within 10 s")), 10000);
-    child.stdout.on("data", (b) => { const m = String(b).match(/running at http:\/\/localhost:(\d+)/); if (m) { clearTimeout(t); resolve(Number(m[1])); } });
-    child.stderr.on("data", (b) => process.stderr.write(b));
-    child.on("exit", (code) => { clearTimeout(t); reject(new Error(`server exited ${code}`)); });
-  });
+  PORT = await waitForPort(child);
 });
 test.after(() => { child.kill(); });
 
 let roomSeq = 0;
 function uniqueRoom() { roomSeq++; return "t" + String.fromCharCode(97 + Math.floor(roomSeq / 26)) + String.fromCharCode(97 + (roomSeq % 26)) + "q"; }
 
-function connect(room) {
-  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?room=${room}`);
+function connect(room, port = PORT) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?room=${room}`);
   const messages = [];
   const waiters = new Set();
   ws.on("message", (b) => { const m = JSON.parse(String(b)); messages.push(m); for (const w of [...waiters]) w(); });
@@ -147,6 +151,45 @@ test("oversized frames close with 1009", async () => {
   c.ws.send("x".repeat(20000));
   const closed = await c.closed;
   assert.equal(closed.code, 1009);
+});
+
+test("a seat that dropped mid-game starts expiring once the game is over", async () => {
+  // Its own server: this needs a turn timer short enough to default for the absent player on every
+  // one of its turns, and a TTL short enough to have elapsed by the time the game ends.
+  const srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
+    env: { ...process.env, PORT: "0", RESUME_TTL_MS: "300", TURN_MS: "40", ROUND_SUMMARY_MS: "20", BOT_DELAY_MIN_MS: "5", BOT_DELAY_MAX_MS: "10" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  try {
+    const port = await waitForPort(srv);
+    const room = "gone";
+    const a = connect(room, port); await a.open();
+    const b = connect(room, port); await b.open();
+    a.send({ type: "join", name: "A" }); b.send({ type: "join", name: "B" });
+    await a.until((m) => m.type === "joined", "a joined");
+    await b.until((m) => m.type === "joined", "b joined");
+    await a.until((m) => m.type === "state" && m.seats && m.seats.length === 2, "both seated");
+    a.send({ type: "start-game" });
+    await a.until((m) => m.type === "state" && m.phase === "playing" && m.game, "playing");
+    b.ws.close();                       // B drops mid-game: its seat is kept, its turns fall to the timer
+    const deadline = Date.now() + 60000;
+    for (;;) {
+      const st = a.last("state");
+      if (st && st.phase === "game_over") break;
+      if (Date.now() > deadline) throw new Error("game did not finish");
+      if (st && st.game && st.game.decision && st.game.current_player === st.you) {
+        const me = st.game.players.find((p) => p.id === st.you);
+        const action = st.game.legal_actions.includes("hit") ? (me.round_score < 15 ? "hit" : "stay") : st.game.legal_actions[0];
+        a.send({ type: "act", turnNumber: st.game.turnNumber, action });
+      }
+      await new Promise((r) => setTimeout(r, 15));
+    }
+    // Seat expiry runs in lobby and game_over (spec 4.5). B has been gone for far longer than the
+    // TTL, so the sweep at game_over drops its seat and the next state A sees has one seat.
+    const fin = await a.until((m) => m.type === "state" && m.phase === "game_over" && m.seats.length === 1, "B's seat expired at game over");
+    assert.equal(fin.seats[0].id, fin.you);
+    a.ws.close();
+  } finally { srv.kill(); }
 });
 
 test("a full two-player game reaches game_over with scores equal to the sum of round results", async () => {

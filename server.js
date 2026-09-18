@@ -55,14 +55,17 @@ const registry = createRegistry({
 });
 
 function startGame(room) {
-  for (const seat of [...room.seats.values()]) if (!seat.isBot && !seat.connected) room.seats.delete(seat.id);
+  for (const seat of [...room.seats.values()]) if (!seat.isBot && !seat.connected) registry.removeSeat(room, seat.id);
   if (room.seats.size < MIN_PLAYERS) throw Object.assign(new Error(`need at least ${MIN_PLAYERS} players`), { code: "not_enough_players" });
   if (room.game) room.game.dispose();
   room.game = createRoomGame({
     config, now: Date.now, setTimeout, clearTimeout, random: Math.random, seed: () => crypto.randomInt(2 ** 31),
     onChange: () => {
       if (registry.get(room.code) !== room) return;
-      if (room.game && room.game.phase === "game_over") room.phase = "game_over";
+      // Seat expiry only runs in lobby and game_over (spec §4.5), so the phase flip is also the moment
+      // a seat that disconnected mid-game starts its clock: sweep before broadcasting, so the
+      // game_over frame already reflects any seat whose TTL elapsed while the game was still running.
+      if (room.game && room.game.phase === "game_over" && room.phase !== "game_over") { room.phase = "game_over"; registry.sweep(room); }
       broadcast(room);
     },
     log,
@@ -140,10 +143,13 @@ wss.on("connection", (ws, req) => {
   });
 });
 
+// The try/catch is per client: one socket that throws on terminate/ping must not skip the sweep
+// for every client after it in the set.
 const heartbeat = setInterval(() => {
-  try {
-    for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); }
-  } catch (err) { log("[heartbeat] failed", err); }
+  for (const ws of wss.clients) {
+    try { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); }
+    catch (err) { log("[heartbeat] failed", err); }
+  }
 }, config.HEARTBEAT_MS);
 heartbeat.unref();
 wss.on("close", () => clearInterval(heartbeat));

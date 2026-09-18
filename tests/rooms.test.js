@@ -96,6 +96,36 @@ test("seats expire only in lobby and game_over; rooms die without occupants; age
   assert.equal(registry.occupantsConnected(r3), 1);
 });
 
+test("game_over starts expiry for a seat that dropped mid-game; removeSeat cancels the timer", () => {
+  const { registry, clock } = setup();
+  const room = registry.getOrCreate("abcd");
+  const ws = fakeWs();
+  const seat = registry.join(room, { name: "Kay", ws });
+  const other = registry.join(room, { name: "Lee", ws: fakeWs() });
+  room.phase = "playing";
+  registry.disconnect(room, ws);
+  clock.advance(200);
+  assert.equal(seat.expiryTimer, null, "no expiry clock runs while the game is in progress");
+  assert.ok(room.seats.has(seat.id));
+  // the game ends: the server flips the phase and sweeps, which is what starts the clock (spec §4.5)
+  room.phase = "game_over";
+  registry.sweep(room);
+  assert.ok(seat.expiryTimer, "game_over arms the disconnected seat's expiry");
+  clock.advance(299);
+  assert.ok(room.seats.has(seat.id), "the TTL counts from the disconnect, not from game_over");
+  clock.advance(2);
+  assert.ok(!room.seats.has(seat.id), "and the seat is gone once the TTL is up");
+  // removeSeat (used when start-game drops disconnected humans) also cancels the seat's timer
+  registry.disconnect(room, other.ws);
+  assert.ok(other.expiryTimer, "game_over arms expiry on a later disconnect too");
+  const pending = clock.pending();
+  assert.equal(registry.removeSeat(room, other.id), true);
+  assert.equal(other.expiryTimer, null, "removeSeat cancels the seat's expiry timer");
+  assert.equal(room.seats.has(other.id), false);
+  assert.ok(clock.pending() < pending);
+  assert.equal(registry.removeSeat(room, "nope"), false);
+});
+
 test("bots get names and policies; visitors-only rooms vanish when the last visitor leaves", () => {
   const { registry, deleted } = setup();
   const room = registry.getOrCreate("abcd");

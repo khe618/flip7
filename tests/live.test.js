@@ -42,6 +42,9 @@ test("an in-process agent takes a live seat, plays a whole game against bots, an
   assert.ok(driver.stats.decisions > 3);
   assert.equal(driver.stats.acts, driver.stats.decisions);
   assert.equal(driver.stats.serverErrors, 0);
+  // One frame per change: the server suppresses its trailing broadcast when the room game already
+  // broadcast for the same message, so no already-answered turn is ever handed to the driver twice.
+  assert.equal(driver.stats.repeatedStates, 0);
   assert.ok(driver.stats.acts >= 1);
   await driver.close(); ws.close();
 });
