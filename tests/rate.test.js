@@ -28,7 +28,7 @@ test("threshold25 rates above random; duplicate runs are deduplicated; disconnec
   const dir = path.join(island, "run-x"); fs.mkdirSync(dir);
   const recs = [
     { kind: "run", run_id: "x", agents: [] },
-    { kind: "game_start", game_id: "g1", seed: 1, rotation: 0, seats: [{ id: "p1", name: "alpha", seat: 0, agent: "alpha@1" }, { id: "p2", name: "beta", seat: 1, agent: "beta@1" }] },
+    { kind: "game_start", game_id: "g1", seats: [{ id: "p1", name: "alpha", seat: 0, agent: "alpha@1" }, { id: "p2", name: "beta", seat: 1, agent: "beta@1" }] },
     { kind: "game_end", game_id: "g1", final_scores: { p1: 200, p2: 100 }, winner: "p1", rounds: 5, events: [] },
     { kind: "summary" },
   ];

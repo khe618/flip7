@@ -11,6 +11,7 @@ const rng = require("../lib/rng");
 
 function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), "flip7-bench-")); }
 function lines(file) { return fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l)); }
+function privateOf(dir) { return JSON.parse(fs.readFileSync(path.join(dir, "run-private.json"), "utf8")); }
 
 test("suites are deterministic and rotations equal the table size", () => {
   const s = getSuite("standard");
@@ -34,16 +35,30 @@ test("a smoke run writes games.jsonl and summary.json in the documented shape, a
   assert.equal(recs[0].kind, "run");
   assert.equal(recs[0].run_id, runId);
   assert.equal(recs[0].suite, "smoke");
-  assert.equal(recs[0].seeds.length, 3);
+  // The agent-readable log carries no seeds at all (spec §6.3); they live in the private sidecar.
+  assert.equal("seeds" in recs[0], false);
+  assert.equal("seed_base" in recs[0], false);
+  assert.equal(/"seed":/.test(fs.readFileSync(path.join(dir, "games.jsonl"), "utf8")), false, "no seed field anywhere in games.jsonl");
+  const secret = privateOf(dir);
+  assert.equal(secret.run_id, runId);
+  assert.equal(secret.suite, "smoke");
+  assert.equal(secret.seeds.length, 3);
+  assert.equal(Object.keys(secret.games).length, 12);
   assert.deepEqual(recs[0].agents.map((a) => a.spec), ["bot:evOneStep", "bot:threshold25", "bot:bustRisk25", "bot:adaptive"]);
   assert.equal(recs[recs.length - 1].kind, "summary");
   const starts = recs.filter((r) => r.kind === "game_start");
   const ends = recs.filter((r) => r.kind === "game_end");
   assert.equal(starts.length, 12); assert.equal(ends.length, 12);
-  assert.deepEqual(new Set(starts.map((s) => s.rotation)), new Set([0, 1, 2, 3]));
+  for (const s of starts) { assert.equal("seed" in s, false); assert.equal("rotation" in s, false); }
+  assert.deepEqual(new Set(starts.map((s) => secret.games[s.game_id].rotation)), new Set([0, 1, 2, 3]));
   // rotation r seats the agent under test at seat r
-  for (const s of starts) assert.equal(s.seats[s.rotation].spec, "bot:evOneStep");
-  for (const s of starts) assert.ok(!/\d{6,}/.test(s.game_id) && s.game_id.length >= 6, "opaque game ids");
+  for (const s of starts) assert.equal(s.seats[secret.games[s.game_id].rotation].spec, "bot:evOneStep");
+  // game ids are opaque: unique within the run, and never the seed the game was played with
+  assert.equal(new Set(starts.map((s) => s.game_id)).size, starts.length, "game ids are unique");
+  for (const s of starts) {
+    assert.ok(s.game_id.length >= 6, "opaque game ids");
+    assert.notEqual(s.game_id, String(secret.games[s.game_id].seed), "a game id never spells its seed");
+  }
   // record order within a game: start, decisions, end
   let i = 1;
   while (recs[i].kind !== "summary") {

@@ -48,6 +48,12 @@ async function runBenchmark(options) {
   const external = specs.map((spec) => (spec.startsWith("bot:") ? null : resolveAgent(spec)));
   let specNames = [];
   const records = [];
+  // Seeds are the one thing an agent must not read while the run is in flight: every rotation of a
+  // seed replays the same initial shuffle, so a seed (or the base it was derived from) turns later
+  // rotations into a known card path. `games.jsonl` is the agent-readable log; the seeds, the seed
+  // base and each game's rotation go to `run-private.json`, which only the runner and replay read.
+  const privateGames = {};
+  const writePrivate = () => fs.writeFileSync(path.join(dir, "run-private.json"), JSON.stringify({ run_id: runId, suite: suite.name, seed_base: suite.seed_base, seeds: suite.seeds, games: privateGames }, null, 2) + "\n");
   let aborted = false, abortMessage = null, gamesPlayed = 0;
 
   // Count busts and Flip 7s from every engine step, including deals and round starts.
@@ -63,7 +69,7 @@ async function runBenchmark(options) {
     specNames = specs.map((spec, i) => (external[i] ? external[i] : resolveAgent(spec)));
     for (let i = 0; i < specNames.length; i++) if (!external[i]) await specNames[i].hello();
     const agentsMeta = specs.map((spec, i) => ({ name: specNames[i].name, version: specNames[i].version, spec }));
-    write({ kind: "run", run_id: runId, protocol: PROTOCOL, suite: suite.name, table: suite.table, seed_base: suite.seed_base, seeds: suite.seeds, agents: agentsMeta, started_at: new Date().toISOString() });
+    write({ kind: "run", run_id: runId, protocol: PROTOCOL, suite: suite.name, table: suite.table, agents: agentsMeta, started_at: new Date().toISOString() });
 
     for (const seed of suite.seeds) {
       for (let rotation = 0; rotation < suite.rotations; rotation++) {
@@ -82,7 +88,8 @@ async function runBenchmark(options) {
         // the game never really began and the log should have no trace of it — not a dangling
         // game_start with no matching game_end.
         for (const p of players) await seatAdapters[p.seat].adapter.start({ type: "start", protocol: PROTOCOL, game_id: gameId, you: p.id, players: players.map((q) => ({ id: q.id, name: q.name, seat: q.seat })) });
-        write({ kind: "game_start", game_id: gameId, seed, rotation, seats: players });
+        privateGames[gameId] = { seed, rotation };
+        write({ kind: "game_start", game_id: gameId, seats: players });
         const stats = players.map(() => ({ busts: 0, flip7s: 0, hits: 0, decisions: 0, attempts: 0, invalid: 0, timeouts: 0, fallbacks: 0, latencies: [] }));
         let r = engine.step(engine.createGame({ players: players.map((p) => ({ id: p.id, name: p.name })), seed }), { type: "start_round" });
         account(stats, r.events);
@@ -123,6 +130,7 @@ async function runBenchmark(options) {
       await Promise.allSettled(external.filter(Boolean).map((a) => a.shutdown()));
       write({ kind: "summary", run_id: runId, aborted: true, abort_message: err.message });
       await new Promise((resolve) => stream.end(resolve));
+      writePrivate();
       throw err;
     }
   } finally {
@@ -135,6 +143,7 @@ async function runBenchmark(options) {
   write({ kind: "summary", ...summary });
   await new Promise((resolve) => stream.end(resolve));
   fs.writeFileSync(path.join(dir, "summary.json"), JSON.stringify(summary, null, 2));
+  writePrivate();
   log(`wrote ${outFile}`);
   return { runId, dir, summary };
 }

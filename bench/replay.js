@@ -1,10 +1,21 @@
 "use strict";
 const fs = require("node:fs");
+const path = require("node:path");
 const engine = require("../lib/engine");
 const { observeGame } = require("../lib/view");
 
 function verifyReplay(file) {
   const recs = fs.readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  // Seeds are not in games.jsonl (spec §6.3): they live in the runner's private sidecar next to it.
+  const privateFile = path.join(path.dirname(path.resolve(file)), "run-private.json");
+  let priv;
+  try { priv = JSON.parse(fs.readFileSync(privateFile, "utf8")); }
+  catch (err) { throw new Error(`cannot replay without the run's seeds: ${privateFile} is missing or unreadable (${err.message})`); }
+  const seedOf = (gameId) => {
+    const g = priv.games && priv.games[gameId];
+    if (!g || typeof g.seed !== "number") throw new Error(`${privateFile} has no seed for game ${gameId}`);
+    return g.seed;
+  };
   const failures = [];
   let games = 0;
   let i = 0;
@@ -14,7 +25,7 @@ function verifyReplay(file) {
     games++;
     let r;
     try {
-      r = engine.step(engine.createGame({ players: start.seats.map((p) => ({ id: p.id, name: p.name })), seed: start.seed }), { type: "start_round" });
+      r = engine.step(engine.createGame({ players: start.seats.map((p) => ({ id: p.id, name: p.name })), seed: seedOf(start.game_id) }), { type: "start_round" });
     } catch (err) { failures.push({ game_id: start.game_id, turnNumber: 0, message: err.message }); continue; }
     let broken = false;
     while (i < recs.length && recs[i].kind === "decision") {
@@ -43,7 +54,10 @@ function verifyReplay(file) {
 if (require.main === module) {
   const file = process.argv[2];
   if (!file) { console.error("usage: node bench/replay.js <games.jsonl>"); process.exit(1); }
-  const { games, failures } = verifyReplay(file);
+  let result;
+  try { result = verifyReplay(file); }
+  catch (err) { console.error(err.message); process.exit(1); }   // e.g. no run-private.json beside the log
+  const { games, failures } = result;
   for (const f of failures) console.error(`game ${f.game_id} turn ${f.turnNumber}: ${f.message}`);
   console.log(`${games} games replayed, ${failures.length} failures`);
   process.exit(failures.length ? 1 : 0);
