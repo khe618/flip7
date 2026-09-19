@@ -2,15 +2,13 @@ import { createNet, readName, writeName, readToken, clearToken } from "./net.js"
 import * as landing from "./landing.js";
 import * as lobby from "./lobby.js";
 import * as table from "./table.js";
-import * as results from "./results.js";
+import { createPresenter } from "./present.js";
+import { createEffects } from "./effects.js";
 
 const $ = (id) => document.getElementById(id);
-let net = null, state = null, you = null, room = null, lastTurnRendered = -1;
+let net = null, state = null, you = null, room = null, lastTurnRendered = -1, presenter = null;
 
-export function showView(id) {
-  for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== id;
-  $("roundOverlay").hidden = true;
-}
+export function showView(id) { for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== id; }
 export function toast(text) {
   const t = $("toast"); t.textContent = text; t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 3500);
@@ -27,6 +25,8 @@ async function copyLink() {
 function leaveRoom() {
   if (net) { net.close(); net = null; }
   table.stop();
+  if (presenter) { presenter.reset(); presenter = null; }
+  table.hideSheet();
   state = null; you = null; room = null; lastTurnRendered = -1;
   $("roomCode").hidden = true;
 }
@@ -53,15 +53,19 @@ function enterRoom(code, intent = null) {
   $("roomCode").textContent = code; $("roomCode").hidden = false;
   for (const el of document.querySelectorAll("[data-room]")) el.textContent = code;
   if (net) net.close();
+  const ctx = { send: (o) => net && net.send(o), toast, room: code, copyLink };
+  table.mount(ctx);
+  presenter = createPresenter({ effects: createEffects({ ctx, showView }), reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches });
   net = createNet({
     room: code,
-    onConnection: (ok) => { $("connPill").hidden = ok; live(ok ? "connected" : "reconnecting"); },
+    onConnection: (ok) => { $("connPill").hidden = ok; live(ok ? "connected" : "reconnecting"); if (ok) table.clearPending(); },
     onJoined: (msg) => { you = msg.playerId; },
     onError: (msg) => {
       // The socket that lost the seat never reconnects, so the join card it
       // shows needs a live one behind it: drop the token this tab no longer
       // owns (keeping it would steal the seat straight back) and re-enter the
       // room, which binds Sit down to the new socket.
+      table.clearPending();
       if (msg.code === "seat_taken_over") { clearToken(code); enterRoom(code); toast(msg.message); return; }
       if (msg.code === "unknown_token" || msg.code === "game_in_progress") { showJoin(); if (msg.code === "game_in_progress") toast("Game in progress, wait for the lobby."); return; }
       toast(msg.message);
@@ -84,12 +88,9 @@ function render() {
   if (state.you === null) { if ($("joinView").hidden) showJoin(); return; }
   you = state.you;
   const ctx = { send: (o) => net.send(o), you, toast, room, copyLink };
-  if (state.phase === "lobby") { showView("lobbyView"); lobby.render(state, ctx); return; }
-  if (state.phase === "game_over" && state.results) { showView("resultsView"); results.render(state, ctx); return; }
-  showView("tableView");
-  table.render(state, ctx);
-  if (state.game && state.game.decision && state.game.turnNumber !== lastTurnRendered) { lastTurnRendered = state.game.turnNumber; live("Your turn"); }
-  if (state.roundSummary) { table.renderRoundOverlay(state, ctx); }
+  if (state.phase === "lobby" || !state.game) { presenter.enqueue(state); showView("lobbyView"); lobby.render(state, ctx); return; }
+  presenter.enqueue(state);
+  if (state.game.decision && state.game.turnNumber !== lastTurnRendered) { lastTurnRendered = state.game.turnNumber; live("Your turn"); }
 }
 
 window.addEventListener("popstate", route);

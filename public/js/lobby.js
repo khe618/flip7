@@ -4,10 +4,13 @@ export function render(state, ctx) {
   for (const s of state.seats) {
     const li = document.createElement("li");
     li.className = "seat" + (s.connected ? "" : " offline");
-    li.innerHTML = `<span class="dot"></span><span class="name"></span>${s.isBot ? '<span class="badge">bot</span>' : ""}${s.isAgent ? '<span class="badge agent">agent</span>' : ""}${s.id === ctx.you ? '<span class="badge you">you</span>' : ""}`;
+    li.innerHTML = `<span class="dot"></span><span class="name"></span>${s.isBot ? '<span class="badge bot">bot</span>' : ""}${s.isAgent ? '<span class="badge agent">agent</span>' : ""}${s.id === ctx.you ? '<span class="badge you">you</span>' : ""}`;
     li.querySelector(".name").textContent = s.name;
     if (s.isBot) { const b = document.createElement("button"); b.textContent = "Remove"; b.className = "link"; b.onclick = () => ctx.send({ type: "remove-bot", playerId: s.id }); li.appendChild(b); }
     list.appendChild(li);
+  }
+  for (let i = state.seats.length; i < 6; i++) {
+    const li = document.createElement("li"); li.className = "seat open"; li.textContent = "Open seat"; list.appendChild(li);
   }
   $("addBotBtn").disabled = state.seats.length >= 6;
   $("startBtn").disabled = state.seats.length < 2;
