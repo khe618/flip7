@@ -13,17 +13,21 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
   let active = null;               // { step, resolve, timer } while a step is waiting
   const deadlines = new Set();     // clock timer ids for barrier caps
 
-  // A cancellable wait: cut(ms) shortens the remaining wait to at most `ms`.
+  // A cancellable wait: cut(ms) shortens the remaining wait to at most `ms`
+  // from now — it never lengthens a wait that is already due sooner.
   function wait(step, ms) {
     return new Promise((resolve) => {
       const done = () => { if (active && active.step === step) { clock.clearTimeout(active.timer); active = null; } resolve(); };
-      active = { step, resolve: done, timer: clock.setTimeout(done, ms) };
+      active = { step, resolve: done, timer: clock.setTimeout(done, ms), dueAt: clock.now() + ms };
     });
   }
   function cutActive(afterMs) {
     if (!active) return;
+    const dueAt = clock.now() + afterMs;
+    if (dueAt >= active.dueAt) return;   // already due sooner than the cut: don't push it out
     clock.clearTimeout(active.timer);
-    const a = active; a.timer = clock.setTimeout(a.resolve, afterMs);
+    active.timer = clock.setTimeout(active.resolve, afterMs);
+    active.dueAt = dueAt;
   }
   function flush() {
     queue = []; gen += 1; busy = false;
@@ -41,23 +45,32 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
       cutActive(0);
     }, BARRIER_CAP_MS);
     deadlines.add(id);
+    barrier.capTimer = id;
   }
 
   async function pump() {
     busy = true;
     const myGen = gen;
-    while (queue.length && myGen === gen) {
-      const step = queue.shift();
-      fx.begin(step);
-      if (step.ms > 0) await wait(step, step.ms);
-      if (myGen !== gen) return;
-      fx.end(step);
-      if (step.kind === "barrier") {
-        fx.render(step.state);
-        if (queue.some((s) => s.kind === "barrier")) fx.preRender(latest);   // an older barrier never enables input
+    try {
+      while (queue.length && myGen === gen) {
+        const step = queue.shift();
+        try {
+          fx.begin(step);
+          if (step.ms > 0) await wait(step, step.ms);
+          if (myGen !== gen) return;
+          fx.end(step);
+          if (step.kind === "barrier") {
+            clock.clearTimeout(step.capTimer); deadlines.delete(step.capTimer);
+            fx.render(step.state);
+            if (queue.some((s) => s.kind === "barrier")) fx.preRender(latest);   // an older barrier never enables input
+          }
+        } catch (err) {
+          console.error("[present] step failed", err);   // skip the bad step, keep the queue moving
+        }
       }
+    } finally {
+      if (myGen === gen) busy = false;
     }
-    if (myGen === gen) busy = false;
   }
 
   return {

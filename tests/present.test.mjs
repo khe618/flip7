@@ -162,3 +162,28 @@ test("a new round arriving while the sheet is up cuts the sheet wait to 300 ms",
   await c.advance(300);
   assert.ok(e.log.some((l) => l[0] === "end" && l[1] === "sheet"), "sheet ended 300 ms after the new round arrived, not 860 ms");
 });
+
+test("the sheet cut never lengthens a wait that is already due sooner", async () => {
+  const e = fx(), c = clock();
+  const p = createPresenter({ effects: e, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  p.enqueue(snap({ turnNumber: 5, history: [...h, ev("stay", { player: "a" }), ev("round_ended", { results: {} })] })); // banked-stamp 260 + sheet 900, sheet due at 1160
+  await c.advance(1100); // sheet has 60 ms left
+  p.enqueue(snap({ turnNumber: 6, history: [ev("round_started", { roundNumber: 2, dealer: "b" }), ev("dealt", { player: "a", card: 4 })], history_start: 3 }));
+  await c.advance(60);
+  assert.ok(e.log.some((l) => l[0] === "end" && l[1] === "sheet"), "sheet ended at its own 60 ms remainder, not pushed out to 300 ms");
+});
+
+test("an effect that throws is caught so the queue keeps moving and the barrier still renders", async () => {
+  const e = fx(), c = clock();
+  let thrown = false;
+  const effects = { ...e, begin: (st) => { if (st.kind === "travel" && !thrown) { thrown = true; throw new Error("boom"); } e.log.push(["begin", st.kind]); } };
+  const p = createPresenter({ effects, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  p.enqueue(snap({ turnNumber: 2, history: [...h, ev("hit", { player: "a", card: 7 })] }));
+  await c.advance(1000);
+  assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 2), "the barrier still rendered despite the thrown step");
+  assert.ok(p.isIdle());
+});
