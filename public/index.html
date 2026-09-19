@@ -4,9 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <meta name="theme-color" content="#0f172a">
   <title>Flip 7</title>
   <meta name="description" content="Flip 7: press your luck, hit or stay. Seven different numbers ends the round.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap">
+  <meta name="theme-color" content="#111917">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -16,18 +19,24 @@
     <span id="connPill" class="pill" hidden>reconnecting…</span>
   </header>
 
-  <section id="landingView" class="view" hidden>
+  <section id="landingView" class="view landing" hidden>
+    <div class="hero" aria-hidden="true">
+      <span class="playing-card number fan"><b>3</b></span><span class="playing-card number fan"><b>7</b></span><span class="playing-card modifier fan"><b>×2</b></span>
+      <span class="playing-card number fan"><b>12</b></span><span class="playing-card action fan"><b>Freeze</b></span><span class="playing-card number fan"><b>9</b></span><span class="playing-card back fan"></span>
+    </div>
     <h1>Flip 7</h1>
     <p class="lede">Press your luck. Hit or stay. Seven different numbers ends the round.</p>
-    <label>Your name <input id="nameInput" maxlength="16" autocomplete="nickname"></label>
-    <div class="actions">
-      <button id="quickPlayBtn" class="primary">Quick play</button>
-      <button id="friendsBtn">Play with friends</button>
+    <div class="panel">
+      <label>Your name <input id="nameInput" maxlength="16" autocomplete="nickname"></label>
+      <button id="quickPlayBtn" class="primary big">Quick play</button>
     </div>
-    <form id="joinForm" class="join-form">
-      <input id="joinCode" maxlength="4" placeholder="room code" autocapitalize="none" autocomplete="off">
-      <button type="submit">Join</button>
-    </form>
+    <div class="secondary">
+      <button id="friendsBtn">Play with friends</button>
+      <form id="joinForm" class="join-form">
+        <input id="joinCode" maxlength="4" placeholder="room code" autocapitalize="none" autocomplete="off">
+        <button type="submit">Join</button>
+      </form>
+    </div>
     <p class="foot-links"><a href="/how-to-play">How to play</a> · <a href="/agent-protocol">Agent protocol</a></p>
   </section>
 
@@ -43,40 +52,58 @@
   </section>
 
   <section id="lobbyView" class="view" hidden>
-    <h2>Room <span class="code-inline" data-room></span></h2>
+    <button id="copyLinkBtn" class="code-big" title="Copy link"><span class="code-label">Room</span><span class="code-inline" data-room></span><span class="code-hint">tap to copy</span></button>
     <p class="hint">Share the link. 2 to 6 players. First to 200 wins.</p>
-    <button id="copyLinkBtn">Copy link</button>
-    <ul id="seatList" class="seat-list"></ul>
+    <div class="felt-panel"><ul id="seatList" class="seat-list"></ul></div>
     <div class="actions">
       <button id="addBotBtn">Add bot</button>
       <button id="startBtn" class="primary">Start game</button>
     </div>
   </section>
 
-  <section id="tableView" class="view" hidden>
-    <div id="tableStatus" class="table-status"></div>
-    <ul id="playerRows" class="player-rows"></ul>
-    <div class="table-meta"><span id="deckInfo"></span><span id="discardInfo"></span></div>
+  <section id="tableView" class="view table" hidden>
+    <div class="turn-strip">
+      <span id="turnWho" class="turn-who"></span>
+      <span id="caption" class="caption" aria-live="polite"></span>
+      <span id="countdown" class="countdown" hidden>
+        <svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle class="track" cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg>
+        <b id="countNum"></b>
+      </span>
+    </div>
+    <ul id="seats" class="seats"></ul>
+    <div class="draw-zone">
+      <div id="deck" class="deck" aria-label="deck"><span class="playing-card back sm"></span><span class="playing-card back sm"></span><span class="playing-card back sm"></span><span class="count" id="deckCount"></span></div>
+      <div id="discard" class="discard" aria-label="discard"><span class="under u1"></span><span class="under u2"></span><span class="top" id="discardTop"></span><span class="parked" id="parked"></span></div>
+    </div>
+    <div id="yourRail" class="your-rail"></div>
     <div id="controls" class="controls" hidden>
-      <button id="hitBtn" class="primary big">Hit</button>
-      <button id="stayBtn" class="big">Stay</button>
+      <button id="hitBtn" class="primary big"><span class="label">Hit</span><span class="spinner" hidden></span></button>
+      <button id="stayBtn" class="big stay"><span class="label">Stay</span><span class="spinner" hidden></span></button>
     </div>
     <div id="targetPicker" class="target-picker" hidden></div>
     <details class="log"><summary>Log</summary><ul id="logList"></ul></details>
+    <div id="fxLayer" class="fx-layer" aria-hidden="true"></div>
   </section>
 
-  <div id="roundOverlay" class="overlay" hidden>
-    <div class="card">
+  <div id="summarySheet" class="summary-sheet" hidden>
+    <div class="sheet">
       <h2 id="roundTitle"></h2>
-      <table id="roundTable"></table>
-      <button id="nextRoundBtn" class="primary">Next round</button>
+      <table id="roundTable"><thead><tr><th></th><th>This round</th><th>Total</th></tr></thead><tbody></tbody></table>
+      <button id="nextRoundBtn" class="primary"><span class="label">Next round</span><span class="track" id="nextTrack"></span></button>
     </div>
   </div>
 
-  <section id="resultsView" class="view" hidden>
-    <h2 id="winnerLine"></h2>
+  <section id="resultsView" class="view results" hidden>
+    <div class="winner">
+      <div class="fan" id="winnerFan" aria-hidden="true"></div>
+      <h2 id="winnerLine"></h2>
+      <p class="final-score" id="winnerScore"></p>
+    </div>
     <ol id="standings"></ol>
-    <button id="playAgainBtn" class="primary">Play again</button>
+    <div class="actions">
+      <button id="playAgainBtn" class="primary big">Play again</button>
+      <button id="resultsCopyLinkBtn" class="quiet">Copy room link</button>
+    </div>
   </section>
 
   <section id="howToPlayView" class="view" hidden>
