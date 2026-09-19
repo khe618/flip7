@@ -138,7 +138,7 @@ Single app shell, `<section class="view" hidden>` per view, toggled in-document 
 
 ### 3.3 Bots in live rooms
 
-Server-side bots occupy seats like players (`isBot: true`). They use the same policies as the benchmark baselines (§6.2), chosen at random from `threshold25`, `bustRisk25`, `adaptive` with a random name. Bots act after a jittered delay of 700 to 1500 ms so the table is readable.
+Server-side bots occupy seats like players (`isBot: true`). They use the same policies as the benchmark baselines (§6.2), chosen at random from `threshold25`, `bustRisk25`, `adaptive` with a random name. Bots act after a jittered delay of 1800 to 2600 ms so the table is readable.
 
 ### 3.4 Agents in live rooms
 
@@ -326,7 +326,7 @@ Every tunable lives in `lib/config.js` with its default and is read from the env
 | --- | --- | --- |
 | `PORT` | 3000 | listen port |
 | `TURN_MS` | 30000 | time to answer a decision in a live room |
-| `BOT_DELAY_MIN_MS` / `BOT_DELAY_MAX_MS` | 700 / 1500 | bot think time in live rooms |
+| `BOT_DELAY_MIN_MS` / `BOT_DELAY_MAX_MS` | 1800 / 2600 | bot think time in live rooms |
 | `ROUND_SUMMARY_MS` | 8000 | auto-advance between rounds |
 | `RESUME_TTL_MS` | 600000 | seat expiry in lobby/results and room deletion |
 | `CODE_RESERVATION_MS` | 60000 | `/api/new-room` reservation |

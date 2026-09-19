@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: flip7
+    name: flip7-arena
     runtime: node
     plan: free
     branch: main

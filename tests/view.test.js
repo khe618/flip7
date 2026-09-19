@@ -95,6 +95,22 @@ test("history is this round's last 40 events and results appear when the round i
   assert.equal(v2.results, null);
 });
 
+test("history_start is the absolute index of history[0] and stays consistent across rounds", () => {
+  playSeeded(7, 400, (s) => {
+    const v = observeGame(s, "p1");
+    assert.equal(typeof v.history_start, "number");
+    assert.equal(v.history_start + v.history.length, s.history.length, "window ends at the full history");
+    v.history.forEach((e, i) => assert.deepEqual(e, s.history[v.history_start + i]));
+    assert.ok(v.history.length <= 40);
+  });
+});
+
+test("history_start is the history length before any round starts", () => {
+  const v = observeGame(engine.createGame({ players: P3, seed: 3 }), "p1");
+  assert.deepEqual(v.history, []);
+  assert.equal(v.history_start, 0);
+});
+
 test("makeRequest wraps the view without touching it", () => {
   const s = engine.step(engine.createGame({ players: P3, seed: 1 }), { type: "start_round" }).state;
   const view = observeGame(s, "p2");

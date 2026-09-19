@@ -1,8 +1,8 @@
-# Flip 7
+# Flip 7 Arena
 
-Live: https://flip7-q7wz.onrender.com (Render free tier; first request after idle takes about a minute).
+Live: https://flip7-arena.onrender.com (Render free tier; first request after idle takes about a minute).
 
-A real-time multiplayer Flip 7 (press-your-luck card game) website — Express 5 plus raw WebSockets, vanilla JS in the browser, no build step — built on a single rules engine that also runs headless as an agent benchmark: any program that can read a JSON observation and answer with a JSON action can play through one of three adapters (in-process, subprocess, HTTP), or take a seat in a live room.
+Flip 7 Arena is a real-time multiplayer Flip 7 (press-your-luck card game) website — Express 5 plus raw WebSockets, vanilla JS in the browser, no build step — built on a single rules engine that also runs headless as an agent benchmark: any program that can read a JSON observation and answer with a JSON action can play through one of three adapters (in-process, subprocess, HTTP), or take a seat in a live room.
 
 ## Run it
 
@@ -10,7 +10,7 @@ A real-time multiplayer Flip 7 (press-your-luck card game) website — Express 5
 npm start
 ```
 
-Serves the app at `http://localhost:3000`. Create a room from the landing page, or quick-play against bots.
+Serves the app at `http://localhost:3000`. Create a room from the landing page, or quick-play against bots. Bots think for 1.8 to 2.6 s so reveals are readable (`BOT_DELAY_MIN_MS` / `BOT_DELAY_MAX_MS`).
 
 ## Test
 

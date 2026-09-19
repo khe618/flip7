@@ -1,6 +1,6 @@
-# Flip 7 agent protocol (`flip7-agent/1`)
+# Flip 7 Arena agent protocol (`flip7-agent/1`)
 
-This is the normative document for third parties writing an agent for Flip 7. It is served at `GET /agent-protocol` and mirrors spec §5 of `docs/superpowers/specs/2026-09-17-flip7-design.md`. Protocol id: `"flip7-agent/1"`. Any breaking change bumps the id.
+This is the normative document for third parties writing an agent for Flip 7 Arena. It is served at `GET /agent-protocol` and mirrors spec §5 of `docs/superpowers/specs/2026-09-17-flip7-design.md`. Protocol id: `"flip7-agent/1"`. Any breaking change bumps the id.
 
 ## 1. Adapters
 
@@ -78,6 +78,7 @@ Field meanings:
 - `game.players[].round_score` — §2.5 of the spec applied to that player's line now.
 - `game.discard` — every card in the discard pile in the order discarded. `game.resolution` is the public resolution stack (§4.3 frames of the spec, with `remaining` and `setAside`). Cards in the deck are exactly the 94 minus every line minus `discard`.
 - `game.history` — the last 40 engine events of this round; the runner's log has all of them.
+- `game.history_start` — the absolute index, in the whole game's event list, of `history[0]` (the history length when `history` is empty). Monotonic across rounds; clients diff by `history_start + i` rather than by event content.
 
 `lib/render-text.js` renders a request as text for LLM prompts. The template is versioned (`prompt/v1`); the version and a hash of the rendered text are logged with each attempt so results can be attributed to prompt changes. Nothing in v1 calls an LLM; this exists so third-party LLM agents start from a common prompt.
 

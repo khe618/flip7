@@ -31,3 +31,27 @@ test("visitor shape is tiny; seated shape carries the game view and timer", () =
   assert.equal(s.roundSummary, null);
   assert.equal(s.results, null);
 });
+
+test("snapshot carries gameId, summaryTimer, and a roundSummary at game_over", () => {
+  const { r, clock } = room();
+  r.game = createRoomGame({ config: { ...readConfig({}), ROUND_SUMMARY_MS: 500 }, now: clock.now, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, random: () => 0.5, seed: () => 1, onChange: () => {}, log: () => {} });
+  r.game.start([...r.seats.values()]);
+  r.phase = "playing";
+  assert.equal(buildState(r, "s1").gameId, 1);
+  assert.equal(buildState(r, "s1").summaryTimer, null);
+  // force a round end by staying with both seats
+  const g = r.game;
+  g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
+  g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
+  const s = buildState(r, "s1");
+  assert.equal(s.game.phase, "round_over");
+  assert.deepEqual(s.summaryTimer, { remainingMs: 500, totalMs: 500 });
+  assert.equal(s.roundSummary.round, 1);
+  assert.deepEqual(s.roundSummary.rows.map((r) => r.status), ["stayed", "stayed"]);
+  // a game_over state also carries the deciding round's summary
+  g.state.players[0].score = 250; g.state.phase = "game_over"; g.state.winner = g.state.players[0].id;
+  const over = buildState(r, "s1");
+  assert.equal(over.game.phase, "game_over");
+  assert.ok(over.roundSummary && over.roundSummary.rows.length === 2, "roundSummary present at game_over");
+  assert.ok(over.results && over.results.winner === g.state.players[0].id);
+});
