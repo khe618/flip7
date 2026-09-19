@@ -163,4 +163,4 @@ function crash(label, err) {
 process.on("uncaughtException", (err) => crash("uncaughtException", err));
 process.on("unhandledRejection", (err) => crash("unhandledRejection", err));
 
-server.listen(config.PORT, () => log(`flip7 running at http://localhost:${server.address().port}`));
+server.listen(config.PORT, () => log(`flip7-arena running at http://localhost:${server.address().port}`));

@@ -1,6 +1,6 @@
-# Flip 7 agent protocol (`flip7-agent/1`)
+# Flip 7 Arena agent protocol (`flip7-agent/1`)
 
-This is the normative document for third parties writing an agent for Flip 7. It is served at `GET /agent-protocol` and mirrors spec §5 of `docs/superpowers/specs/2026-09-17-flip7-design.md`. Protocol id: `"flip7-agent/1"`. Any breaking change bumps the id.
+This is the normative document for third parties writing an agent for Flip 7 Arena. It is served at `GET /agent-protocol` and mirrors spec §5 of `docs/superpowers/specs/2026-09-17-flip7-design.md`. Protocol id: `"flip7-agent/1"`. Any breaking change bumps the id.
 
 ## 1. Adapters
 
