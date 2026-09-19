@@ -73,6 +73,22 @@ export function createEffects({ ctx, showView }) {
   H.reshuffle = () => { const top = $("discardTop"); top.style.transition = "transform 300ms var(--move), opacity 300ms"; const d = rect(table.discardEl()), k = rect(table.deckEl()); top.style.transform = `translate(${k.left - d.left}px, ${k.top - d.top}px)`; top.style.opacity = "0"; };
   E.reshuffle = () => { const top = $("discardTop"); top.style.transition = ""; top.style.transform = ""; top.style.opacity = ""; table.setDiscardTop(null); };
   function latestPlayer(id) { const st = table.mount.state; return st && st.game ? st.game.players.find((p) => p.id === id) : null; }
+  const unpark = (id) => { const c = table.parkedEl().querySelector(`[data-player="${id}"]`); if (c) { table.setDiscardTop(cardOf(c)); c.remove(); } };
+  const cardOf = (el) => { const b = el.querySelector("b")?.textContent || ""; return el.classList.contains("number") ? Number(b) : el.getAttribute("aria-label") === "Freeze" ? "freeze" : el.getAttribute("aria-label") === "Flip 3" ? "flip_three" : "second_chance"; };
+  let pips = new Map();
+  H["pips-set"] = (s) => { unpark(s.from); pips.set(s.player, 3); table.setPips(s.player, 3); };
+  H["pip-remove"] = (s) => { const n = Math.max(0, (pips.get(s.player) || 0) - 1); pips.set(s.player, n); table.setPips(s.player, n); };
+  H["pips-clear"] = (s) => { pips.delete(s.player); table.setPips(s.player, 0); };
+  H["freeze-sweep"] = (s) => { unpark(s.from); const h = table.handEl(s.to); if (h) { h.classList.remove("freeze-sweep"); void h.offsetWidth; h.classList.add("freeze-sweep"); } };
+  E["freeze-sweep"] = (s) => { table.handEl(s.to)?.classList.remove("freeze-sweep"); table.setStatus(s.to, "frozen"); };
+  const prevLand = H["token-land"];
+  H["token-land"] = (s) => { unpark(s.player); prevLand(s); };
+  H["banked-stamp"] = (s) => { const st = table.seatEl(s.player)?.querySelector(".stamp"); if (st) { st.hidden = false; } table.setStatus(s.player, "stayed"); };
+  H.notches = (s) => { const h = table.handEl(s.player); if (!h) return; h.querySelectorAll(".notches").forEach((n) => { n.style.transition = "background 350ms linear"; n.style.setProperty("--n", 7); }); };
+  H["flip7-ring"] = (s) => { const li = table.seatEl(s.player); if (li) { li.classList.remove("flip7"); void li.offsetWidth; li.classList.add("flip7"); } };
+  E["flip7-ring"] = (s) => table.seatEl(s.player)?.classList.remove("flip7");
+  H.sheet = () => { const st = table.mount.state; if (st) table.renderSheet(st, ctx); };
+  H.results = () => { const st = table.mount.state; if (st && st.game.phase === "game_over") { table.hideSheet(); showView("resultsView"); table.renderResults(st, ctx); } };
 
   return api;
 }
