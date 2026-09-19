@@ -6,7 +6,7 @@ const { readConfig } = require("../lib/config");
 test("readConfig returns every documented default", () => {
   const c = readConfig({});
   assert.deepEqual(c, {
-    PORT: 3000, TURN_MS: 30000, BOT_DELAY_MIN_MS: 700, BOT_DELAY_MAX_MS: 1500,
+    PORT: 3000, TURN_MS: 30000, BOT_DELAY_MIN_MS: 1800, BOT_DELAY_MAX_MS: 2600,
     ROUND_SUMMARY_MS: 8000, RESUME_TTL_MS: 600000, CODE_RESERVATION_MS: 60000,
     HEARTBEAT_MS: 30000, MAX_PAYLOAD: 16384,
   });

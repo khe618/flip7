@@ -27,7 +27,7 @@ test("start deals, arms the turn timer, and the timer applies the default action
   assert.equal(g.phase, "round");
   const pending = g.state.round.pending;
   assert.equal(pending.type, "hit_or_stay");
-  assert.deepEqual(g.timerInfo(), { turnNumber: 1, remainingMs: 1000 });
+  assert.deepEqual(g.timerInfo(), { turnNumber: 1, remainingMs: 1000, totalMs: 1000 });
   clock.advance(400);
   assert.equal(g.timerInfo().remainingMs, 600);
   const before = changes.length;
@@ -116,6 +116,23 @@ test("a bot delay armed in one game is a no-op in the next, which still runs its
   assert.equal(g.state.round.pending.player, "b1");
   clock.advance(100);                                // t = 260: this game's own bot delay
   assert.equal(g.state.round.pending.player, "s1", "the live bot timer still acts");
+});
+
+test("summaryInfo reports the round-summary countdown and null otherwise", () => {
+  const { g, clock } = setup();
+  g.start(HUMANS);
+  assert.equal(g.summaryInfo(), null);
+  // stay twice: both lines stay, the round ends and the summary timer arms
+  g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
+  g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
+  assert.equal(g.phase, "round_over");
+  assert.deepEqual(g.summaryInfo(), { remainingMs: 500, totalMs: 500 });
+  clock.advance(200);
+  assert.deepEqual(g.summaryInfo(), { remainingMs: 300, totalMs: 500 });
+  clock.advance(300);
+  assert.equal(g.phase, "round");
+  assert.equal(g.summaryInfo(), null);
+  assert.deepEqual(g.timerInfo(), { turnNumber: g.state.turnNumber, remainingMs: 1000, totalMs: 1000 });
 });
 
 test("dispose clears timers", () => {
