@@ -26,7 +26,7 @@ export const T = {
   pressDeck: 70, travel: 240, flip: 190, rest: 220, sort: 160, restFlipThree: 300, beatFlipThree: 140, dealStagger: 110,
   actionHold: 450, toDiscard: 220, scoreRoll: 220,
   bustPair: 500, bustShake: 280, bustHold: 550, sweep: 320,
-  scPair: 350, scFlash: 300, scDiscard: 300, tokenLand: 260, tokenArc: 360,
+  scPair: 400, scFlash: 300, scDiscard: 300, tokenLand: 260, tokenArc: 360,
   freezeSweep: 320, bankedStamp: 260, notches: 350, flip7Ring: 900, reshuffle: 300, sheet: 900, results: 1500,
 };
 const MIN = { flip: 120, rest: 150, hold: 250, bustPair: 350, bustHold: 250, scPair: 400, scFlash: 150, sweep: 120, flip7Ring: 400, sheet: 300, results: 700 };
@@ -34,8 +34,6 @@ const REDUCED_ZERO = new Set(["press-deck", "travel", "shake", "sweep", "score-r
 // Events that belong to the reveal just before them (same player, or same `from`):
 // they are planned inside the reveal group so a Flip Three or deal postlude follows them.
 const CONSEQUENCE = new Set(["bust", "second_chance_saved", "second_chance_kept", "second_chance_given", "second_chance_discarded", "freeze", "flip_three_started", "set_aside"]);
-const T_SC_PAIR = 400;
-
 const step = (kind, tier, ms, fields = {}) => ({ kind, tier, ms, min: fields.min ?? 0, ...fields });
 const S = (kind, ms, f) => step(kind, "structural", ms, f);
 const C = (kind, ms, min, f) => step(kind, "consequential", ms, { ...f, min });
@@ -80,7 +78,7 @@ function consequence(e, prev, nameOf) {
       C("hold", T.bustHold, MIN.bustHold, { player: e.player }),
       S("sweep", T.sweep, { player: e.player, card: e.card, min: MIN.sweep })];
     case "second_chance_saved": return [
-      C("pair", T_SC_PAIR, MIN.scPair, { player: e.player, card: e.card, caption: "SECOND CHANCE" }),
+      C("pair", T.scPair, MIN.scPair, { player: e.player, card: e.card, caption: "SECOND CHANCE" }),
       C("shield-flash", T.scFlash, MIN.scFlash, { player: e.player }),
       S("to-discard", T.scDiscard, { player: e.player, card: e.card, shield: true })];
     case "second_chance_kept": return [S("token-land", T.tokenLand, { player: e.player })];

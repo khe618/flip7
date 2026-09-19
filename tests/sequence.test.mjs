@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newEvents, cardKind, planSteps, compress, totalMs } from "../public/js/sequence.js";
+import { newEvents, cardKind, planSteps, compress, totalMs, T } from "../public/js/sequence.js";
 
 const ev = (type, fields = {}) => ({ type, turnNumber: 1, ...fields });
 const game = (history, history_start, extra = {}) => ({ history, history_start, turnNumber: 1, players: [], ...extra });
@@ -113,6 +113,7 @@ test("planSteps: a Second Chance save shows the pair, flashes the shield, and di
   assert.equal(steps[3].ms, 400); assert.equal(steps[3].min, 400, "the Second Chance pair is never compressed below 400");
   assert.equal(steps[4].ms, 300); assert.equal(steps[4].min, 150);
   assert.equal(steps[3].caption, "SECOND CHANCE");
+  assert.equal(T.scPair, 400);
 });
 
 test("planSteps: a kept Second Chance lands as a token and is never sent to discard", () => {
