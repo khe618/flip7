@@ -66,11 +66,20 @@ export function createEffects({ ctx, showView }) {
   H["press-deck"] = () => table.deckEl().classList.add("press");
   E["press-deck"] = () => table.deckEl().classList.remove("press");
   H.travel = (s) => { const el = flying.get(s.player) || spawn(s); el.style.setProperty("--dur", `${s.ms}ms`); place(el, handTarget(s.player)); };
-  H.flip = (s) => { const el = flying.get(s.player); if (!el) return; el.classList.add("flipping");
-    if (s.ms <= 120) { el.classList.add("emph"); el.classList.remove("back"); el.dataset.face = "front"; el.style.setProperty("--ry", "0deg"); return; }
-    el.style.setProperty("--dur", `${Math.max(1, s.ms / 2)}ms`); el.style.setProperty("--ry", "90deg");
-    setTimeout(() => { el.classList.remove("back"); el.dataset.face = "front"; el.style.setProperty("--ry", "0deg"); }, Math.max(1, s.ms / 2)); };
-  E.flip = (s) => { const el = flying.get(s.player); if (el) { el.classList.remove("flipping", "back", "emph"); el.style.setProperty("--ry", "0deg"); } };
+  // The flip is two Web Animations chained on the same element: ease-in to
+  // edge-on, swap the face the moment that half finishes, then ease-out from
+  // the far side (-90). Chaining on the animation rather than a parallel timer
+  // keeps the swap on the edge-on frame; ease-in then ease-out keeps the speed
+  // continuous through it; continuing from -90 reads as one turn, not a wobble.
+  // composite:"add" layers the rotation onto the CSS base transform, which
+  // carries the translate and the perspective.
+  const showFront = (el) => { el.classList.remove("back"); el.dataset.face = "front"; };
+  H.flip = (s) => { const el = flying.get(s.player); if (!el) return;
+    if (s.ms <= 120 || typeof el.animate !== "function") { el.classList.add("emph"); showFront(el); return; }
+    const half = Math.max(1, s.ms / 2);
+    const first = el.animate([{ transform: "rotateY(0deg)" }, { transform: "rotateY(90deg)" }], { duration: half, easing: "ease-in", fill: "forwards", composite: "add" });
+    first.onfinish = () => { if (el.dataset.face === "front") return; showFront(el); first.cancel(); el.animate([{ transform: "rotateY(-90deg)" }, { transform: "rotateY(0deg)" }], { duration: half, easing: "ease-out", composite: "add" }); }; };
+  E.flip = (s) => { const el = flying.get(s.player); if (el) { for (const a of el.getAnimations()) a.cancel(); el.classList.remove("emph"); showFront(el); } };
   H.sort = (s) => { const el = flying.get(s.player); const real = table.addCard(s.player, s.card); if (real && el) { real.classList.add("new"); place(el, rect(real)); el.style.setProperty("--dur", `${s.ms}ms`); } };
   E.sort = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } const real = table.handEl(s.player)?.querySelector(".playing-card.new"); if (real) real.classList.remove("new"); };
   // A Second Chance save discards two objects: the duplicate card and the
