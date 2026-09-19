@@ -7,7 +7,7 @@ const noop = () => {};
 const defaultNameOf = (state) => { const m = new Map((state.game?.players || []).map((p) => [p.id, p.name])); return (id) => m.get(id) || id; };
 
 export function createPresenter({ effects, clock = defaultClock, reducedMotion = false, nameOf = defaultNameOf }) {
-  const fx = { preRender: noop, begin: noop, end: noop, caption: noop, scaffold: noop, ...effects };
+  const fx = { preRender: noop, begin: noop, end: noop, caption: noop, scaffold: noop, reset: noop, ...effects };
   let cursor = null, gameId = null, phase = null, latest = null;
   let queue = [], busy = false, gen = 0;
   let active = null;               // { step, resolve, timer } while a step is waiting
@@ -85,6 +85,7 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
       if (!state.game || state.phase === "lobby") { flush(); cursor = null; gameId = state.gameId ?? null; latest = state; fx.render(state); return; }
       if (state.gameId !== gameId) {
         flush(); gameId = state.gameId;
+        fx.reset();   // transient DOM from the previous game never survives a game change
         cursor = prevPhase === "lobby" ? 0 : null;
         if (cursor === 0) fx.scaffold(state);   // the table view is otherwise hidden and has no seats for the first deal
       }

@@ -31,6 +31,7 @@ function fx() {
     begin: (st) => log.push(["begin", st.kind]),
     end: (st) => log.push(["end", st.kind]),
     caption: (t) => log.push(["caption", t]),
+    reset: () => log.push(["reset"]),
     scaffold: (s) => log.push(["scaffold", s.game.turnNumber]),
   };
 }
@@ -43,7 +44,7 @@ test("first snapshot renders immediately with no steps", async () => {
   const e = fx(), c = clock();
   const p = createPresenter({ effects: e, clock: c });
   p.enqueue(snap({ history: [ev("round_started"), ev("dealt", { player: "a", card: 5 })] }));
-  assert.deepEqual(e.log, [["render", 1]]);
+  assert.deepEqual(e.log, [["reset"], ["render", 1]]);
   assert.ok(p.isIdle());
 });
 
@@ -115,7 +116,7 @@ test("a new gameId mid-game flushes the queue and resets the cursor", async () =
   await c.advance(100);
   e.log.length = 0;
   p.enqueue(snap({ gameId: 2, turnNumber: 1, history: [ev("round_started")] }));
-  assert.deepEqual(e.log, [["render", 1]]);
+  assert.deepEqual(e.log, [["reset"], ["render", 1]]);
   await c.advance(2000);
   assert.ok(!e.log.some((l) => l[0] === "end" && l[1] !== "barrier"), "no step from the old game finishes after the flush");
 });
@@ -259,4 +260,18 @@ test("an end() that throws on the barrier itself still reconciles via render", a
   await c.advance(1000);
   assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 2), "the barrier still reconciled despite end() throwing");
   assert.ok(p.isIdle());
+});
+
+test("a gameId change resets effects before anything else, from the lobby and mid-game alike", async () => {
+  const e = fx(), c = clock();
+  const p = createPresenter({ effects: e, clock: c });
+  p.enqueue(snap({ phase: "lobby", gameId: null }));
+  e.log.length = 0;
+  p.enqueue(snap({ gameId: 1, history: [ev("round_started", { roundNumber: 1, dealer: "a" }), ev("dealt", { player: "a", card: 5 })] }));
+  assert.deepEqual(e.log[0], ["reset"], "reset precedes the scaffold from the lobby");
+  await c.advance(5000);
+  e.log.length = 0;
+  p.enqueue(snap({ gameId: 2, turnNumber: 1, history: [ev("round_started", { roundNumber: 1, dealer: "b" })] }));
+  assert.deepEqual(e.log[0], ["reset"], "reset precedes the render on a mid-game gameId change");
+  assert.ok(e.log.some((l) => l[0] === "render"));
 });

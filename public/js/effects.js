@@ -15,6 +15,7 @@ export function createEffects({ ctx, showView }) {
   // Built as a named object so Tasks 8 and 9 can add step handlers and wrap `render` before it is returned.
   const api = {
     handlers, caption,
+    reset() { table.resetTransients(); pips.clear(); flying.clear(); },
     scaffold(state) {
       showView("tableView"); table.hideSheet(); table.resetTransients();
       pips.clear(); flying.clear();

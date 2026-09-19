@@ -34,6 +34,7 @@ async function copyLink() {
 function leaveRoom() {
   if (net) { net.close(); net = null; }
   table.stop();
+  table.resetTransients();
   if (presenter) { presenter.reset(); presenter = null; }
   table.hideSheet();
   state = null; you = null; room = null;
