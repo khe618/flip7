@@ -24,6 +24,23 @@ export function makeCard(card, size = "") {
 }
 
 export function stop() { clearInterval(countdown); countdown = null; $("seats").textContent = ""; $("yourRail").textContent = ""; clearPending(); lastTurnCued = -1; }
+// Comprehensive transient-state reset: clears every visual left-behind by an
+// interrupted or flushed animation (a flush can bypass a step's `end`
+// handler — present.js's `flush`/`cutActive`), so a new game or a return to
+// the lobby never inherits another game's in-flight styling or classes.
+export function resetTransients() {
+  $("parked").textContent = "";
+  $("fxLayer").textContent = "";
+  const top = $("discardTop");
+  top.style.transition = ""; top.style.transform = ""; top.style.opacity = "";
+  $("deck").classList.remove("press");
+  for (const h of document.querySelectorAll(".hand")) h.classList.remove("sweeping", "freeze-sweep", "frozen");
+  for (const s of document.querySelectorAll(".seat")) s.classList.remove("shake", "flip7", "sweep-gold");
+  $("yourRail").classList.remove("shake", "flip7", "sweep-gold");
+  for (const c of document.querySelectorAll(".playing-card")) c.classList.remove("dup");
+  for (const p of document.querySelectorAll(".pips")) p.hidden = true;
+  for (const s of document.querySelectorAll(".shield")) s.classList.remove("flash");
+}
 // Called on a newer turn, on reconnect, and on any server error: a lost action
 // must never leave the controls or the target picker dead.
 export function clearPending() {

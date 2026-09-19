@@ -1,23 +1,8 @@
 // DOM effects for the presentation queue. `render` and `preRender` reconcile;
 // step handlers (Tasks 8 and 9) animate between them.
 import * as table from "./table.js";
+import { scaffoldState } from "./sequence.js";
 const $ = (id) => document.getElementById(id);
-
-// A scaffold copy of `state` with every hand emptied out: used to reconcile
-// seats, names, banked scores, and the deck count before the first deal's
-// steps run, so they never travel against a hidden view with no seats.
-function emptyHands(state) {
-  const g = state.game;
-  return {
-    ...state,
-    game: {
-      ...g,
-      discard: [],
-      resolution: [],
-      players: g.players.map((p) => ({ ...p, numbers: [], modifiers: [], second_chance: false, status: "active", round_score: 0 })),
-    },
-  };
-}
 
 export function createEffects({ ctx, showView }) {
   const handlers = { begin: {}, end: {} };
@@ -30,18 +15,34 @@ export function createEffects({ ctx, showView }) {
   // Built as a named object so Tasks 8 and 9 can add step handlers and wrap `render` before it is returned.
   const api = {
     handlers, caption,
-    scaffold(state) { showView("tableView"); table.hideSheet(); table.render(emptyHands(state), ctx); },
+    scaffold(state) {
+      showView("tableView"); table.hideSheet(); table.resetTransients();
+      pips.clear(); flying.clear();
+      table.render(scaffoldState(state), ctx);
+    },
     render(state) {
-      if (!state.game) { table.hideSheet(); table.stop(); table.clearPending(); return; }
+      if (!state.game) { table.hideSheet(); table.stop(); table.resetTransients(); pips.clear(); flying.clear(); table.clearPending(); return; }
+      // Read before any view switch: showView("tableView") would hide
+      // #resultsView, making a hidden-guard read afterwards always true and
+      // replaying the results fan on every later barrier at game_over.
+      const resultsShown = !$("resultsView").hidden;
       const ph = state.game.phase;
-      showView("tableView");
-      table.render(state, ctx);
-      // The sheet/results steps already presented their view at the barrier
-      // that opened them; a later barrier's reconcile must not replay their
-      // row/fan animations or restart the progress track.
-      if (ph === "round_over") { if ($("summarySheet").hidden) table.renderSheet(state, ctx); }
-      else if (ph === "game_over") { table.hideSheet(); if ($("resultsView").hidden) { showView("resultsView"); table.renderResults(state, ctx); } }
-      else table.hideSheet();
+      if (ph === "game_over") {
+        table.render(state, ctx);
+        table.hideSheet();
+        showView("resultsView");
+        // The results step already presented the fan at the barrier that
+        // opened it; a later barrier's reconcile must not replay it.
+        if (!resultsShown) table.renderResults(state, ctx);
+      } else {
+        showView("tableView");
+        table.render(state, ctx);
+        // The sheet step already presented the summary at the barrier that
+        // opened it; a later barrier's reconcile must not replay its row
+        // animations or restart the progress track.
+        if (ph === "round_over") { if ($("summarySheet").hidden) table.renderSheet(state, ctx); }
+        else table.hideSheet();
+      }
     },
     preRender(state) { table.preRender(state, ctx); },
     begin(step) { if (step.caption) caption(step.caption, step.kind === "pair" && /BUST/.test(step.caption) ? "loud" : /FLIP 7|SECOND CHANCE/.test(step.caption || "") ? "gold" : ""); (handlers.begin[step.kind] || (() => {}))(step); },

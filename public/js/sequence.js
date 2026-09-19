@@ -15,6 +15,27 @@ export function newEvents(cursor, game) {
   return { events: history.slice(cursor - start), reset: false, cursor: end };
 }
 
+// A scaffold copy of `state` with every hand emptied and the decision nulled:
+// used to reconcile seats, names, banked scores, and the deck count before
+// the first deal's steps run, so they never travel against a hidden view
+// with no seats. `decision: null` keeps this settled render from consuming
+// the once-per-turn focus cue (table.js's `lastTurnCued`) — the real
+// barrier render, with the actual decision, performs that cue instead.
+export function scaffoldState(state) {
+  const g = state.game;
+  return {
+    ...state,
+    game: {
+      ...g,
+      discard: [],
+      resolution: [],
+      decision: null,
+      legal_actions: [],
+      players: g.players.map((p) => ({ ...p, numbers: [], modifiers: [], second_chance: false, status: "active", round_score: 0 })),
+    },
+  };
+}
+
 export function cardKind(card) {
   if (typeof card === "number") return "number";
   if (card === "x2" || (typeof card === "string" && card.startsWith("+"))) return "modifier";

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newEvents, cardKind, planSteps, compress, totalMs, T } from "../public/js/sequence.js";
+import { newEvents, cardKind, planSteps, compress, totalMs, T, scaffoldState } from "../public/js/sequence.js";
 
 const ev = (type, fields = {}) => ({ type, turnNumber: 1, ...fields });
 const game = (history, history_start, extra = {}) => ({ history, history_start, turnNumber: 1, players: [], ...extra });
@@ -281,4 +281,39 @@ test("compress leaves sheet and results at full length", () => {
   const c = compress(steps);
   const sheet = c.find((s) => s.kind === "sheet"), results = c.find((s) => s.kind === "results");
   assert.equal(sheet.ms, 900); assert.equal(results.ms, 1500);
+});
+
+test("scaffoldState empties hands and nulls the decision, without mutating its input", () => {
+  const state = {
+    you: "a",
+    game: {
+      history: [], history_start: 0, turnNumber: 4,
+      discard: [9], resolution: [{ card: "flip_three", target: "a", setAside: [], remaining: 1, ended: false }],
+      decision: { type: "hit_or_stay" }, legal_actions: ["hit", "stay"],
+      players: [
+        { id: "a", name: "A", numbers: [1, 2], modifiers: ["x2"], second_chance: true, status: "active", round_score: 3, score: 10 },
+        { id: "b", name: "B", numbers: [5], modifiers: [], second_chance: false, status: "stayed", round_score: 5, score: 20 },
+      ],
+    },
+  };
+  const scaffold = scaffoldState(state);
+  assert.equal(scaffold.game.decision, null);
+  assert.deepEqual(scaffold.game.discard, []);
+  assert.deepEqual(scaffold.game.resolution, []);
+  assert.deepEqual(scaffold.game.legal_actions, []);
+  for (const p of scaffold.game.players) {
+    assert.deepEqual(p.numbers, []);
+    assert.deepEqual(p.modifiers, []);
+    assert.equal(p.second_chance, false);
+    assert.equal(p.status, "active");
+    assert.equal(p.round_score, 0);
+  }
+  // scores (a field the scaffold does not touch) survive, so seats keep their banked total
+  assert.equal(scaffold.game.players[1].score, 20);
+  // the input is untouched
+  assert.deepEqual(state.game.discard, [9]);
+  assert.equal(state.game.decision.type, "hit_or_stay");
+  assert.deepEqual(state.game.players[0].numbers, [1, 2]);
+  assert.equal(state.game.players[0].second_chance, true);
+  assert.equal(state.game.players[1].status, "stayed");
 });

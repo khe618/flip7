@@ -13,7 +13,16 @@ export function toast(text) {
   const t = $("toast"); t.textContent = text; t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 3500);
 }
-function live(text) { $("live").textContent = text; }
+// Connection status shares the sole live region (#caption) instead of a
+// second, silenced live element. It only overwrites the caption while the
+// table is on screen, and only for a connection message — never touching
+// effects' own caption timers (captionTimer in effects.js), which own the
+// caption the rest of the time.
+function live(text) {
+  if ($("tableView").hidden) return;
+  if (text !== "connected" && text !== "reconnecting") return;
+  $("caption").textContent = text;
+}
 // Shared by the join card and the lobby (spec §3.2 promises the button on both).
 async function copyLink() {
   try { await navigator.clipboard.writeText(location.href); toast("Link copied"); }
