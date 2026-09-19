@@ -60,7 +60,7 @@
 - Modify: `docs/agent-protocol.md`, `README.md`, `docs/superpowers/specs/2026-09-17-flip7-design.md`
 
 **Interfaces:**
-- Produces: `observeGame(state, id).history_start` (number: absolute index into the game's full history of `history[0]`; equals the full history length when `history` is empty). `roomGame.summaryInfo()` → `{ remainingMs }` while the round-summary timer is armed, else `null`. Snapshot fields `gameId` (number or null), `summaryTimer` (`{ remainingMs }` or null), `roundSummary` also populated when the game phase is `game_over`.
+- Produces: `observeGame(state, id).history_start` (number: absolute index into the game's full history of `history[0]`; equals the full history length when `history` is empty). `roomGame.timerInfo()` → `{ turnNumber, remainingMs, totalMs }` (`totalMs = config.TURN_MS`). `roomGame.summaryInfo()` → `{ remainingMs, totalMs }` (`totalMs = config.ROUND_SUMMARY_MS`) while the round-summary timer is armed, else `null`. Snapshot fields `gameId` (number or null), `summaryTimer`, `roundSummary` also populated when the game phase is `game_over`, and each `roundSummary.rows[i]` carries `status` (the player's line status: `active`, `stayed`, `frozen`, `busted`).
 
 - [ ] **Step 1: Write the failing view test**
 
@@ -125,14 +125,17 @@ test("summaryInfo reports the round-summary countdown and null otherwise", () =>
   g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
   g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
   assert.equal(g.phase, "round_over");
-  assert.deepEqual(g.summaryInfo(), { remainingMs: 500 });
+  assert.deepEqual(g.summaryInfo(), { remainingMs: 500, totalMs: 500 });
   clock.advance(200);
-  assert.deepEqual(g.summaryInfo(), { remainingMs: 300 });
+  assert.deepEqual(g.summaryInfo(), { remainingMs: 300, totalMs: 500 });
   clock.advance(300);
   assert.equal(g.phase, "round");
   assert.equal(g.summaryInfo(), null);
+  assert.deepEqual(g.timerInfo(), { turnNumber: g.state.turnNumber, remainingMs: 1000, totalMs: 1000 });
 });
 ```
+
+Also update the existing assertion in the first test of `tests/room-game.test.js` from `assert.deepEqual(g.timerInfo(), { turnNumber: 1, remainingMs: 1000 });` to `assert.deepEqual(g.timerInfo(), { turnNumber: 1, remainingMs: 1000, totalMs: 1000 });` (setup() uses `TURN_MS: 1000`). Search the tests directory for any other `deepEqual(g.timerInfo()` or `timerInfo(), {` and add `totalMs` there too.
 
 Append to `tests/snapshot.test.js`:
 
@@ -150,8 +153,9 @@ test("snapshot carries gameId, summaryTimer, and a roundSummary at game_over", (
   g.act(g.state.round.pending.player, g.state.turnNumber, "stay");
   const s = buildState(r, "s1");
   assert.equal(s.game.phase, "round_over");
-  assert.deepEqual(s.summaryTimer, { remainingMs: 500 });
+  assert.deepEqual(s.summaryTimer, { remainingMs: 500, totalMs: 500 });
   assert.equal(s.roundSummary.round, 1);
+  assert.deepEqual(s.roundSummary.rows.map((r) => r.status), ["stayed", "stayed"]);
   // a game_over state also carries the deciding round's summary
   g.state.players[0].score = 250; g.state.phase = "game_over"; g.state.winner = g.state.players[0].id;
   const over = buildState(r, "s1");
@@ -168,13 +172,13 @@ Expected: FAIL (`summaryInfo is not a function`, `gameId` undefined).
 
 - [ ] **Step 7: Implement `summaryInfo` and the snapshot fields**
 
-In `lib/room-game.js`, after `timerInfo()` add:
+In `lib/room-game.js`, change `timerInfo()` to return `{ turnNumber: state.turnNumber, remainingMs: Math.max(0, t.due - now()), totalMs: config.TURN_MS }` and after it add:
 
 ```js
     summaryInfo() {
       const t = timers.summary;
       if (!t || !state || state.phase !== "round_over") return null;
-      return { remainingMs: Math.max(0, t.due - now()) };
+      return { remainingMs: Math.max(0, t.due - now()), totalMs: config.ROUND_SUMMARY_MS };
     },
 ```
 
@@ -182,7 +186,7 @@ In `lib/snapshot.js` replace the `roundSummary` condition and the return so they
 
 ```js
   if (game && (game.phase === "round_over" || game.phase === "game_over") && game.results) {
-    roundSummary = { round: game.round, rows: game.players.map((p) => ({ id: p.id, name: p.name, roundScore: game.results[p.id].roundScore, flip7: game.results[p.id].flip7, score: p.score })) };
+    roundSummary = { round: game.round, rows: game.players.map((p) => ({ id: p.id, name: p.name, status: p.status, roundScore: game.results[p.id].roundScore, flip7: game.results[p.id].flip7, score: p.score })) };
   }
   ...
   return { type: "state", room: room.code, phase: room.phase, you: recipientId, seats, game, gameId: g ? g.gameId : null, timer: g ? g.timerInfo() : null, summaryTimer: g ? g.summaryInfo() : null, roundSummary, results };
@@ -417,23 +421,28 @@ test("planSteps: bust shows the duplicate pair, shakes, holds, then sweeps; no r
 test("planSteps: a Second Chance save shows the pair, flashes the shield, and discards both", () => {
   const steps = planSteps([ev("hit", { player: "a", card: 3 }), ev("second_chance_saved", { player: "a", card: 3 })], g1(), opts);
   assert.deepEqual(kinds(steps), ["press-deck", "travel", "flip", "pair", "shield-flash", "to-discard", "barrier"]);
-  assert.equal(steps[3].ms + steps[4].ms, 650);
-  assert.equal(steps[3].min + steps[4].min, 400);
+  assert.equal(steps[3].ms, 400); assert.equal(steps[3].min, 400, "the Second Chance pair is never compressed below 400");
+  assert.equal(steps[4].ms, 300); assert.equal(steps[4].min, 150);
   assert.equal(steps[3].caption, "SECOND CHANCE");
 });
 
-test("planSteps: Second Chance kept, given, and discarded", () => {
+test("planSteps: a kept Second Chance lands as a token and is never sent to discard", () => {
+  const steps = planSteps([ev("hit", { player: "a", card: "second_chance" }), ev("second_chance_kept", { player: "a" })], g1(), opts);
+  assert.deepEqual(kinds(steps), ["press-deck", "travel", "flip", "hold", "to-token", "token-land", "barrier"]);
+  assert.equal(steps[4].ms, 220);
+});
+
+test("planSteps: a second Second Chance goes to discard, then arcs to the receiver or is discarded", () => {
   const steps = planSteps([
-    ev("hit", { player: "a", card: "second_chance" }), ev("second_chance_kept", { player: "a" }),
     ev("hit", { player: "a", card: "second_chance" }), ev("second_chance_given", { from: "a", to: "b" }),
-    ev("second_chance_discarded", { player: "a" }),
+    ev("hit", { player: "a", card: "second_chance" }), ev("second_chance_discarded", { player: "a" }),
   ], g1(), opts);
   assert.deepEqual(kinds(steps), [
-    "press-deck", "travel", "flip", "hold", "to-discard", "token-land",
     "press-deck", "travel", "flip", "hold", "to-discard", "token-arc",
-    "caption", "barrier",
+    "press-deck", "travel", "flip", "hold", "to-discard", "caption",
+    "barrier",
   ]);
-  assert.deepEqual([steps[11].from, steps[11].to], ["a", "b"]);
+  assert.deepEqual([steps[5].from, steps[5].to], ["a", "b"]);
 });
 
 test("planSteps: Flip Three reveals three cards sequentially with a rest and a beat between each", () => {
@@ -467,9 +476,19 @@ test("planSteps: an action drawn during Flip Three parks beside the discard, the
   assert.equal(k.filter((x) => x === "to-discard").length, 0, "the parked card is not sent to discard by the reveal");
 });
 
-test("planSteps: a Second Chance save inside Flip Three uses the same pair steps", () => {
+test("planSteps: a Second Chance save inside Flip Three uses the same pair steps, then the Flip Three postlude", () => {
   const steps = planSteps([ev("flip_three_card", { player: "b", card: 5 }), ev("second_chance_saved", { player: "b", card: 5 })], g1(), opts);
   assert.deepEqual(kinds(steps), ["press-deck", "travel", "flip", "pair", "shield-flash", "to-discard", "beat", "pip-remove", "barrier"]);
+});
+
+test("planSteps: a bust inside Flip Three shows the pair and sweeps before the postlude and the frame end", () => {
+  const steps = planSteps([ev("flip_three_card", { player: "b", card: 5 }), ev("bust", { player: "b", card: 5 }), ev("flip_three_ended", { player: "b" })], g1(), opts);
+  assert.deepEqual(kinds(steps), ["press-deck", "travel", "flip", "pair", "shake", "hold", "sweep", "beat", "pip-remove", "pips-clear", "barrier"]);
+});
+
+test("planSteps: a dealt card that busts (a duplicate on the deal is impossible, but a dealt action still gets the deal beat after its consequence)", () => {
+  const steps = planSteps([ev("dealt", { player: "a", card: "second_chance" }), ev("second_chance_kept", { player: "a" })], g1(), opts);
+  assert.deepEqual(kinds(steps), ["travel", "flip", "hold", "to-token", "token-land", "beat", "barrier"]);
 });
 
 test("planSteps: deck exhausted then a forced stay captions the bank", () => {
@@ -530,34 +549,79 @@ export const T = {
   scPair: 350, scFlash: 300, scDiscard: 300, tokenLand: 260, tokenArc: 360,
   freezeSweep: 320, bankedStamp: 260, notches: 350, flip7Ring: 900, reshuffle: 300, sheet: 900, results: 1500,
 };
-const MIN = { flip: 120, rest: 150, hold: 250, bustPair: 350, bustHold: 250, scPair: 250, scFlash: 150, sweep: 120, flip7Ring: 400, sheet: 300, results: 700 };
-const REDUCED_ZERO = new Set(["press-deck", "travel", "shake", "sweep", "score-roll", "token-arc", "token-land", "sort", "to-discard", "park", "reshuffle", "freeze-sweep", "notches"]);
+const MIN = { flip: 120, rest: 150, hold: 250, bustPair: 350, bustHold: 250, scPair: 400, scFlash: 150, sweep: 120, flip7Ring: 400, sheet: 300, results: 700 };
+const REDUCED_ZERO = new Set(["press-deck", "travel", "shake", "sweep", "score-roll", "token-arc", "token-land", "sort", "to-discard", "to-token", "park", "reshuffle", "freeze-sweep", "notches"]);
+// Events that belong to the reveal just before them (same player, or same `from`):
+// they are planned inside the reveal group so a Flip Three or deal postlude follows them.
+const CONSEQUENCE = new Set(["bust", "second_chance_saved", "second_chance_kept", "second_chance_given", "second_chance_discarded", "freeze", "flip_three_started", "set_aside"]);
+const T_SC_PAIR = 400;
 
 const step = (kind, tier, ms, fields = {}) => ({ kind, tier, ms, min: fields.min ?? 0, ...fields });
 const S = (kind, ms, f) => step(kind, "structural", ms, f);
 const C = (kind, ms, min, f) => step(kind, "consequential", ms, { ...f, min });
 const X = (kind, ms, f) => step(kind, "cosmetic", ms, f);
 
+const owner = (e) => e.player ?? e.from;
+const belongs = (e, next) => !!next && CONSEQUENCE.has(next.type) && owner(next) === e.player;
+
+// The reveal steps only; the caller appends the consequence and then the postlude.
 function reveal(e, next, source) {
   const kind = cardKind(e.card);
   const at = { player: e.player, card: e.card };
   const out = [];
   if (source !== "dealt") out.push(S("press-deck", T.pressDeck, at));
   out.push(S("travel", T.travel, at), C("flip", T.flip, MIN.flip, at));
-  const same = next && next.player === e.player;
+  const rest = source === "flip_three_card" ? T.restFlipThree : T.rest;
   if (kind === "number") {
-    if (!(same && (next.type === "bust" || next.type === "second_chance_saved"))) {
-      out.push(C("rest", source === "flip_three_card" ? T.restFlipThree : T.rest, MIN.rest, at), S("sort", T.sort, at));
-    }
+    if (!(belongs(e, next) && (next.type === "bust" || next.type === "second_chance_saved"))) out.push(C("rest", rest, MIN.rest, at), S("sort", T.sort, at));
   } else if (kind === "modifier") {
-    out.push(C("rest", source === "flip_three_card" ? T.restFlipThree : T.rest, MIN.rest, at), S("sort", T.sort, at), X("score-roll", T.scoreRoll, at));
+    out.push(C("rest", rest, MIN.rest, at), S("sort", T.sort, at), X("score-roll", T.scoreRoll, at));
   } else {
     out.push(C("hold", T.actionHold, MIN.hold, at));
-    out.push(same && next.type === "set_aside" ? S("park", T.toDiscard, at) : S("to-discard", T.toDiscard, at));
+    const n = belongs(e, next) ? next.type : null;
+    if (n === "set_aside") out.push(S("park", T.toDiscard, at));
+    else if (n === "second_chance_kept") out.push(S("to-token", T.toDiscard, at));
+    else out.push(S("to-discard", T.toDiscard, at));
   }
-  if (source === "flip_three_card") out.push(S("beat", T.beatFlipThree, at), S("pip-remove", 0, at));
-  if (source === "dealt") out.push(S("beat", T.dealStagger, at));
   return out;
+}
+
+function postlude(source, at) {
+  if (source === "flip_three_card") return [S("beat", T.beatFlipThree, at), S("pip-remove", 0, at)];
+  if (source === "dealt") return [S("beat", T.dealStagger, at)];
+  return [];
+}
+
+function consequence(e, prev, nameOf) {
+  switch (e.type) {
+    case "bust": return [
+      C("pair", T.bustPair, MIN.bustPair, { player: e.player, card: e.card, caption: `BUST · duplicate ${e.card}` }),
+      S("shake", T.bustShake, { player: e.player }),
+      C("hold", T.bustHold, MIN.bustHold, { player: e.player }),
+      S("sweep", T.sweep, { player: e.player, card: e.card, min: MIN.sweep })];
+    case "second_chance_saved": return [
+      C("pair", T_SC_PAIR, MIN.scPair, { player: e.player, card: e.card, caption: "SECOND CHANCE" }),
+      C("shield-flash", T.scFlash, MIN.scFlash, { player: e.player }),
+      S("to-discard", T.scDiscard, { player: e.player, card: e.card, shield: true })];
+    case "second_chance_kept": return [S("token-land", T.tokenLand, { player: e.player })];
+    case "second_chance_given": return [S("token-arc", T.tokenArc, { from: e.from, to: e.to, caption: `${nameOf(e.from)} gives Second Chance to ${nameOf(e.to)}` })];
+    case "second_chance_discarded": return [S("caption", 0, { caption: "Second Chance discarded" })];
+    case "freeze": return [S("freeze-sweep", T.freezeSweep, { from: e.from, to: e.to, caption: `${nameOf(e.to)} is frozen` })];
+    case "flip_three_started": return [S("pips-set", 0, { from: e.from, to: e.to, player: e.to, caption: `${nameOf(e.to)} must flip three` })];
+    case "flip_three_ended": return [S("pips-clear", 0, { player: e.player })];
+    case "set_aside": return []; // the reveal before it already parked the card
+    case "stay": {
+      const forced = prev && prev.type === "deck_exhausted" && prev.player === e.player;
+      return [X("banked-stamp", T.bankedStamp, { player: e.player, caption: forced ? "No cards left · banked" : `${nameOf(e.player)} banks` })];
+    }
+    case "flip7": return [X("notches", T.notches, { player: e.player }), C("flip7-ring", T.flip7Ring, MIN.flip7Ring, { player: e.player, caption: "FLIP 7 +15" })];
+    case "round_started": return [S("round-start", 0, { caption: `Round ${e.roundNumber} · ${nameOf(e.dealer)} deals` })];
+    case "reshuffle": return [S("reshuffle", T.reshuffle, { caption: `Discard reshuffled (${e.count})` })];
+    case "deck_exhausted": return [S("caption", 0, { caption: "No cards left to flip" })];
+    case "round_ended": return [C("sheet", T.sheet, MIN.sheet, {})];
+    case "game_over": return [C("results", T.results, MIN.results, { player: e.winner })];
+    default: return [];
+  }
 }
 
 export function planSteps(events, game, opts = {}) {
@@ -565,38 +629,12 @@ export function planSteps(events, game, opts = {}) {
   const out = [];
   for (let i = 0; i < events.length; i++) {
     const e = events[i], next = events[i + 1], prev = events[i - 1];
-    switch (e.type) {
-      case "dealt": case "hit": case "flip_three_card": out.push(...reveal(e, next, e.type)); break;
-      case "bust":
-        out.push(C("pair", T.bustPair, MIN.bustPair, { player: e.player, card: e.card, caption: `BUST · duplicate ${e.card}` }),
-          S("shake", T.bustShake, { player: e.player }),
-          C("hold", T.bustHold, MIN.bustHold, { player: e.player }),
-          S("sweep", T.sweep, { player: e.player, min: MIN.sweep }));
-        break;
-      case "second_chance_saved":
-        out.push(C("pair", T.scPair, MIN.scPair, { player: e.player, card: e.card, caption: "SECOND CHANCE" }),
-          C("shield-flash", T.scFlash, MIN.scFlash, { player: e.player }),
-          S("to-discard", T.scDiscard, { player: e.player, card: e.card, shield: true }));
-        break;
-      case "second_chance_kept": out.push(S("token-land", T.tokenLand, { player: e.player })); break;
-      case "second_chance_given": out.push(S("token-arc", T.tokenArc, { from: e.from, to: e.to, caption: `${nameOf(e.from)} gives Second Chance to ${nameOf(e.to)}` })); break;
-      case "second_chance_discarded": out.push(S("caption", 0, { caption: "Second Chance discarded" })); break;
-      case "freeze": out.push(S("freeze-sweep", T.freezeSweep, { from: e.from, to: e.to, caption: `${nameOf(e.to)} is frozen` })); break;
-      case "flip_three_started": out.push(S("pips-set", 0, { from: e.from, to: e.to, player: e.to, caption: `${nameOf(e.to)} must flip three` })); break;
-      case "flip_three_ended": out.push(S("pips-clear", 0, { player: e.player })); break;
-      case "set_aside": break; // the reveal that precedes it already parked the card
-      case "stay": {
-        const forced = prev && prev.type === "deck_exhausted" && prev.player === e.player;
-        out.push(X("banked-stamp", T.bankedStamp, { player: e.player, caption: forced ? "No cards left · banked" : `${nameOf(e.player)} banks` }));
-        break;
-      }
-      case "flip7": out.push(X("notches", T.notches, { player: e.player }), C("flip7-ring", T.flip7Ring, MIN.flip7Ring, { player: e.player, caption: "FLIP 7 +15" })); break;
-      case "round_started": out.push(S("round-start", 0, { caption: `Round ${e.roundNumber} · ${nameOf(e.dealer)} deals` })); break;
-      case "reshuffle": out.push(S("reshuffle", T.reshuffle, { caption: `Discard reshuffled (${e.count})` })); break;
-      case "deck_exhausted": out.push(S("caption", 0, { caption: "No cards left to flip" })); break;
-      case "round_ended": out.push(C("sheet", T.sheet, MIN.sheet, {})); break;
-      case "game_over": out.push(C("results", T.results, MIN.results, { player: e.winner })); break;
-      default: break;
+    if (e.type === "dealt" || e.type === "hit" || e.type === "flip_three_card") {
+      out.push(...reveal(e, next, e.type));
+      if (belongs(e, next)) { out.push(...consequence(next, e, nameOf)); i += 1; }
+      out.push(...postlude(e.type, { player: e.player, card: e.card }));
+    } else {
+      out.push(...consequence(e, prev, nameOf));
     }
   }
   if (opts.reducedMotion) for (const s of out) { if (REDUCED_ZERO.has(s.kind)) s.ms = 0; else if (s.kind === "flip") s.ms = MIN.flip; }
@@ -605,10 +643,12 @@ export function planSteps(events, game, opts = {}) {
 }
 ```
 
+Walk the Task 3 tests through this code before running them: the Flip Three test's action hit is `hit flip_three` followed by `flip_three_started { from: "a" }`, which `belongs` (owner is `from`), so `pips-set` comes right after `to-discard`; each `flip_three_card` gets its `beat`/`pip-remove` postlude after any bust or save consequence; the parked freeze is `flip_three_card freeze` + `set_aside` (consumed, no steps) + postlude, and the later `freeze` event is planned on its own after `pips-clear`.
+
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `node --test tests/sequence.test.mjs`
-Expected: PASS, 23 tests. If a step-order assertion fails, fix the planner, not the test: the orders in the tests are the spec.
+Expected: PASS, 26 tests. If a step-order assertion fails, fix the planner, not the test: the orders in the tests are the spec.
 
 - [ ] **Step 5: Commit**
 
@@ -647,6 +687,8 @@ test("compress drops cosmetic steps, zeroes structural ones except sweep, and fl
   assert.equal(c.find((s) => s.kind === "flip").ms, 120);
   const pair = c.find((s) => s.kind === "pair"), hold = c.find((s) => s.kind === "hold");
   assert.equal(pair.ms + hold.ms, 600, "bust floor survives compression");
+  const sc = compress(planSteps([ev("hit", { player: "a", card: 3 }), ev("second_chance_saved", { player: "a", card: 3 })], g1(), opts));
+  assert.equal(sc.find((s) => s.kind === "pair").ms, 400, "Second Chance pair floor");
   assert.equal(c.at(-1).kind, "barrier");
   assert.ok(totalMs(c) < totalMs(steps));
   assert.notEqual(c, steps, "returns a new array");
@@ -671,6 +713,7 @@ export function totalMs(steps) { return steps.reduce((n, s) => n + s.ms, 0); }
 export function compress(steps) {
   const out = [];
   for (const s of steps) {
+    if (s.kind === "barrier") { out.push(s); continue; }   // by reference: the presenter's cap timer holds it
     if (s.tier === "cosmetic") continue;
     if (s.tier === "structural") { out.push({ ...s, ms: s.kind === "sweep" ? MIN.sweep : 0 }); continue; }
     out.push({ ...s, ms: Math.min(s.ms, s.min) });
@@ -682,7 +725,7 @@ export function compress(steps) {
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `node --test tests/sequence.test.mjs`
-Expected: PASS, 25 tests.
+Expected: PASS, 28 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -705,7 +748,7 @@ git commit -m "Add catch-up compression for the presentation queue"
   - `effects` contract (all optional except `render`): `render(state)` full reconcile and view switch; `preRender(state)` countdown plus disabled controls; `begin(step)` and `end(step)` around each step; `caption(text)`.
   - `clock` = `{ now(), setTimeout(fn, ms), clearTimeout(id) }`; defaults to `performance`/globals in the browser.
   - `nameOf(state)` → `(id) => name` used for captions; default looks up `state.game.players`.
-- Behaviour (spec §3.1, §3.3, §3.5): cursor per game; `lobby` states and states without `game` flush and render immediately; new `gameId` flushes (cursor `0` if the previous state was `lobby`, so the first deal animates; else `null`); reset diffs render at once and caption `Catching up…` when a cursor existed; each snapshot's steps end with a barrier whose `state` is rendered when it runs; queue over `BUDGET_MS` is compressed; a barrier older than `BARRIER_CAP_MS` drops every step ahead of it.
+- Behaviour (spec §3.1, §3.3, §3.5): cursor per game; `lobby` states and states without `game` flush and render immediately; new `gameId` flushes (cursor `0` if the previous state was `lobby`, so the first deal animates; else `null`); reset diffs render at once and caption `Catching up…` when a cursor existed; each snapshot's steps end with a barrier whose `state` is rendered when it runs; **only the newest barrier enables input**: when an older barrier runs while newer steps are queued, `render(step.state)` is immediately followed by `preRender(latest)` so controls stay disabled; queue over `BUDGET_MS` is compressed; every barrier arms a deadline timer at `arrivedAt + BARRIER_CAP_MS` that, if the barrier has not run, drops the steps ahead of it and cuts the active wait, so the barrier runs at the cap even mid-step; a `round-start` step arriving while a `sheet` step is active cuts the sheet's remaining wait to at most 300 ms.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -834,16 +877,47 @@ test("queued playtime over the budget is compressed", async () => {
   assert.deepEqual(e.log.at(-1), ["render", 5]);
 });
 
-test("a barrier older than the cap drops the steps ahead of it", async () => {
+test("a barrier runs at the 4 s cap even while an earlier step is mid-wait", async () => {
   const e = fx(), c = clock();
   const p = createPresenter({ effects: e, clock: c });
   const h = [ev("round_started")];
   p.enqueue(snap({ history: h }));
-  const many = Array.from({ length: 8 }, (_, i) => ev("hit", { player: i % 2 ? "a" : "b", card: i }));
-  p.enqueue(snap({ turnNumber: 9, history: [...h, ...many] })); // compressed: 8 x (120 + 150) = 2160 ms
-  p.enqueue(snap({ turnNumber: 10, history: [...h, ...many, ev("hit", { player: "a", card: 12 })] }));
-  await c.advance(4000);
-  assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 10), "the second barrier ran by the 4 s cap");
+  const many = Array.from({ length: 16 }, (_, i) => ev("hit", { player: i % 2 ? "a" : "b", card: i % 13 }));
+  p.enqueue(snap({ turnNumber: 17, history: [...h, ...many] })); // compressed: 16 x (120 + 150) = 4320 ms, past the cap
+  await c.advance(3999);
+  assert.ok(!e.log.some((l) => l[0] === "render" && l[1] === 17), "not before the cap");
+  await c.advance(1);
+  assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 17), "rendered exactly at the cap");
+  assert.equal(c.now(), 4000);
+});
+
+test("an older barrier renders its snapshot but hands control back to the latest one (no stale input window)", async () => {
+  const e = fx(), c = clock();
+  const p = createPresenter({ effects: e, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  const h2 = [...h, ev("hit", { player: "b", card: 7 })];
+  p.enqueue(snap({ turnNumber: 2, history: h2 }));
+  p.enqueue(snap({ turnNumber: 3, history: [...h2, ev("hit", { player: "a", card: 9 })] }));
+  await c.advance(880);
+  const i = e.log.findIndex((l) => l[0] === "render" && l[1] === 2);
+  assert.ok(i > 0, "turn 2 barrier rendered");
+  assert.deepEqual(e.log[i + 1], ["pre", 3], "immediately re-disabled by the latest snapshot's pre-render");
+  await c.advance(880);
+  assert.deepEqual(e.log.at(-1), ["render", 3]);
+});
+
+test("a new round arriving while the sheet is up cuts the sheet wait to 300 ms", async () => {
+  const e = fx(), c = clock();
+  const p = createPresenter({ effects: e, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  p.enqueue(snap({ turnNumber: 5, history: [...h, ev("stay", { player: "a" }), ev("round_ended", { results: {} })] })); // banked-stamp 260 + sheet 900
+  await c.advance(300); // 40 ms into the sheet
+  assert.deepEqual(e.log.at(-1), ["begin", "sheet"]);
+  p.enqueue(snap({ turnNumber: 6, history: [ev("round_started", { roundNumber: 2, dealer: "b" }), ev("dealt", { player: "a", card: 4 })], history_start: 3 }));
+  await c.advance(300);
+  assert.ok(e.log.some((l) => l[0] === "end" && l[1] === "sheet"), "sheet ended 300 ms after the new round arrived, not 860 ms");
 });
 ```
 
@@ -867,25 +941,54 @@ const defaultNameOf = (state) => { const m = new Map((state.game?.players || [])
 
 export function createPresenter({ effects, clock = defaultClock, reducedMotion = false, nameOf = defaultNameOf }) {
   const fx = { preRender: noop, begin: noop, end: noop, caption: noop, ...effects };
-  let cursor = null, gameId = null, phase = null;
-  let queue = [], busy = false, gen = 0, timer = null;
+  let cursor = null, gameId = null, phase = null, latest = null;
+  let queue = [], busy = false, gen = 0;
+  let active = null;               // { step, resolve, timer } while a step is waiting
+  const deadlines = new Set();     // clock timer ids for barrier caps
 
-  const wait = (ms) => new Promise((resolve) => { timer = clock.setTimeout(resolve, ms); });
-
-  function flush() { queue = []; gen += 1; if (timer !== null) { clock.clearTimeout(timer); timer = null; } busy = false; }
+  // A cancellable wait: cut(ms) shortens the remaining wait to at most `ms`.
+  function wait(step, ms) {
+    return new Promise((resolve) => {
+      const done = () => { if (active && active.step === step) { clock.clearTimeout(active.timer); active = null; } resolve(); };
+      active = { step, resolve: done, timer: clock.setTimeout(done, ms) };
+    });
+  }
+  function cutActive(afterMs) {
+    if (!active) return;
+    clock.clearTimeout(active.timer);
+    const a = active; a.timer = clock.setTimeout(a.resolve, afterMs);
+  }
+  function flush() {
+    queue = []; gen += 1; busy = false;
+    if (active) { clock.clearTimeout(active.timer); active = null; }
+    for (const id of deadlines) clock.clearTimeout(id); deadlines.clear();
+  }
+  // Barrier cap: when it fires and the barrier is still queued, drop everything
+  // ahead of it and cut the active wait so the barrier runs now.
+  function armCap(barrier) {
+    const id = clock.setTimeout(() => {
+      deadlines.delete(id);
+      const idx = queue.indexOf(barrier);
+      if (idx < 0) return;
+      queue.splice(0, idx);
+      cutActive(0);
+    }, BARRIER_CAP_MS);
+    deadlines.add(id);
+  }
 
   async function pump() {
     busy = true;
     const myGen = gen;
     while (queue.length && myGen === gen) {
-      const capIdx = queue.findIndex((s) => s.kind === "barrier" && clock.now() - s.arrivedAt >= BARRIER_CAP_MS);
-      if (capIdx > 0) queue.splice(0, capIdx);
       const step = queue.shift();
       fx.begin(step);
-      if (step.ms > 0) await wait(step.ms);
+      if (step.ms > 0) await wait(step, step.ms);
       if (myGen !== gen) return;
       fx.end(step);
-      if (step.kind === "barrier") fx.render(step.state);
+      if (step.kind === "barrier") {
+        fx.render(step.state);
+        if (queue.some((s) => s.kind === "barrier")) fx.preRender(latest);   // an older barrier never enables input
+      }
     }
     if (myGen === gen) busy = false;
   }
@@ -893,8 +996,9 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
   return {
     enqueue(state) {
       const prevPhase = phase; phase = state.phase;
-      if (!state.game || state.phase === "lobby") { flush(); cursor = null; gameId = state.gameId ?? null; fx.render(state); return; }
+      if (!state.game || state.phase === "lobby") { flush(); cursor = null; gameId = state.gameId ?? null; latest = state; fx.render(state); return; }
       if (state.gameId !== gameId) { flush(); gameId = state.gameId; cursor = prevPhase === "lobby" ? 0 : null; }
+      latest = state;
       const hadCursor = cursor !== null;
       const r = newEvents(cursor, state.game);
       cursor = r.cursor;
@@ -902,25 +1006,29 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
       const steps = planSteps(r.events, state.game, { you: state.you, reducedMotion, nameOf: nameOf(state) });
       const barrier = steps[steps.length - 1];
       barrier.state = state; barrier.arrivedAt = clock.now();
+      if (active && active.step.kind === "sheet" && steps.some((s) => s.kind === "round-start")) cutActive(300);
       queue.push(...steps);
+      armCap(barrier);
       fx.preRender(state);
       if (totalMs(queue) > BUDGET_MS) queue = compress(queue);
       if (!busy) pump();
     },
-    reset() { flush(); cursor = null; gameId = null; phase = null; },
+    reset() { flush(); cursor = null; gameId = null; phase = null; latest = null; },
     isIdle() { return !busy && queue.length === 0; },
   };
 }
 ```
 
+`compress` returns new step objects, so after compression the barrier object the cap timer captured is no longer the one in the queue. Make `compress` keep barrier steps by reference: in Task 4's `compress`, push `s` itself (not a copy) when `s.kind === "barrier"`. Add that line to Task 4 now: `if (s.kind === "barrier") { out.push(s); continue; }` as the first statement in the loop.
+
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `node --test tests/present.test.mjs`
-Expected: PASS, 8 tests. If the fake clock's microtask draining is not enough for a test to observe the render, add more `await Promise.resolve()` rounds inside `advance`; do not add real timers.
+Expected: PASS, 10 tests. The fake clock runs a timer callback and then drains microtasks three times before looking for the next due timer; the pump's `await wait()` resolves within those drains and immediately calls `clock.setTimeout` for the next step, which the loop then finds. If a test cannot observe a render, raise the drain count in `advance` (it is a plain loop); do not add real timers or `setImmediate`.
 
 - [ ] **Step 5: Run the full suite and commit**
 
-Run: `npm test` (expected all green, 106 + 25 + 8 = 139).
+Run: `npm test` (expected all green, 106 + 28 + 10 = 144).
 
 ```bash
 git add public/js/present.js tests/present.test.mjs
@@ -1300,16 +1408,22 @@ button.link { min-height: 0; padding: 2px 6px; margin-left: auto; border: 0; bac
   .playing-card b { font-size: 28px; }
   h1 { font-size: 2.8rem; }
 }
-/* ---------- desktop: oval table ---------- */
+/* ---------- desktop: oval table. Opponents 1-3 across the top, 4 and 5 at the
+   sides of the draw zone, your rail across the bottom. Same DOM: `.seats`
+   becomes display: contents so each seat is placed by the table grid. ---------- */
 @media (min-width: 760px) {
-  .view.table { max-width: 1120px; display: grid; grid-template-columns: 1fr minmax(320px, 420px) 1fr; grid-template-areas: "strip strip strip" "seats seats seats" "left draw right" "rail rail rail" "log log log"; column-gap: 20px; }
-  .turn-strip { grid-area: strip; } .seats { grid-area: seats; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); } .draw-zone { grid-area: draw; margin: 24px 0; } .your-rail { grid-area: rail; } .log { grid-area: log; }
+  .view.table { max-width: 1120px; display: grid; grid-template-columns: 1fr minmax(320px, 420px) 1fr; grid-template-areas: "strip strip strip" "s1 s2 s3" "s4 draw s5" "rail rail rail" "log log log"; column-gap: 20px; row-gap: 12px; align-items: start; }
+  .turn-strip { grid-area: strip; margin: 0; }
+  .seats { display: contents; }
+  .seats .seat:nth-child(1) { grid-area: s1; } .seats .seat:nth-child(2) { grid-area: s2; } .seats .seat:nth-child(3) { grid-area: s3; }
+  .seats .seat:nth-child(4) { grid-area: s4; align-self: center; } .seats .seat:nth-child(5) { grid-area: s5; align-self: center; }
+  .draw-zone { grid-area: draw; margin: 24px 0; align-self: center; } .your-rail { grid-area: rail; } .log { grid-area: log; }
   .controls, .target-picker { position: sticky; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
-  .playing-card.new { animation: emphasis 120ms ease both !important; animation-duration: 120ms !important; }
+  .playing-card.new, .playing-card.reveal.emph { animation: emphasis 120ms ease both !important; animation-duration: 120ms !important; }
   .playing-card.reveal { transition: none; }
 }
 ```
@@ -1381,7 +1495,14 @@ export function makeCard(card, size = "") {
 }
 
 export function stop() { clearInterval(countdown); countdown = null; pending = null; }
-export function clearPending() { pending = null; for (const b of [$("hitBtn"), $("stayBtn")]) { b.disabled = false; b.querySelector(".spinner").hidden = true; } $("hitBtn").querySelector(".label").textContent = "Hit"; $("stayBtn").querySelector(".label").textContent = "Stay"; }
+// Called on a newer turn, on reconnect, and on any server error: a lost action
+// must never leave the controls or the target picker dead.
+export function clearPending() {
+  pending = null;
+  for (const b of [$("hitBtn"), $("stayBtn")]) { b.disabled = false; b.style.width = ""; b.querySelector(".spinner").hidden = true; }
+  $("hitBtn").querySelector(".label").textContent = "Hit"; $("stayBtn").querySelector(".label").textContent = "Stay";
+  for (const b of $("targetPicker").querySelectorAll("button")) { b.disabled = false; b.classList.remove("pending"); }
+}
 
 export function mount(ctx) {
   if (mounted) return; mounted = true;
@@ -1465,7 +1586,7 @@ function paint(state, ctx, settled) {
   $("turnWho").textContent = g.phase === "round" ? (g.current_player === state.you ? "Your decision" : `${nameOf(g.current_player)} is deciding`) : g.phase === "round_over" ? "Round over" : "";
   clearInterval(countdown); const cd = $("countdown");
   if (state.timer && g.phase === "round") {
-    cd.hidden = false; let remaining = state.timer.remainingMs; const total = 30000;
+    cd.hidden = false; let remaining = state.timer.remainingMs; const total = state.timer.totalMs || 30000;
     const tick = () => { const s = Math.ceil(Math.max(0, remaining) / 1000); $("countNum").textContent = s; cd.style.setProperty("--p", Math.max(0, remaining) / total); cd.classList.toggle("warn", s <= 6 && s > 4); cd.classList.toggle("hot", s <= 4 && s > 2); cd.classList.toggle("crit", s <= 2); remaining -= 250; };
     tick(); countdown = setInterval(tick, 250);
   } else cd.hidden = true;
@@ -1507,8 +1628,9 @@ function paint(state, ctx, settled) {
     mine.candidates.forEach((id, i) => {
       const p = g.players.find((q) => q.id === id);
       const b = document.createElement("button"); b.className = "big"; b.disabled = !settled || !!pending;
-      b.textContent = `${p.name}${id === state.you ? " (you)" : ""} · ${p.score + p.round_score}`;
-      b.onclick = () => { if (pending) return; pending = { turnNumber: g.turnNumber }; for (const x of picker.querySelectorAll("button")) x.disabled = true; ctx.send({ type: "act", turnNumber: g.turnNumber, action: "target:" + id }); };
+      b.innerHTML = `<span class="label"></span><span class="spinner" hidden></span>`;
+      b.querySelector(".label").textContent = `${p.name}${id === state.you ? " (you)" : ""} · ${p.score + p.round_score}`;
+      b.onclick = () => { if (pending) return; pending = { turnNumber: g.turnNumber }; for (const x of picker.querySelectorAll("button")) x.disabled = true; b.classList.add("pending"); b.querySelector(".spinner").hidden = false; ctx.send({ type: "act", turnNumber: g.turnNumber, action: "target:" + id }); };
       picker.appendChild(b); if (i === 0 && settled) b.focus({ preventScroll: true });
     });
   }
@@ -1524,7 +1646,7 @@ export function renderSheet(state, ctx) {
   const tb = $("roundTable").querySelector("tbody"); tb.textContent = "";
   s.rows.forEach((row, i) => {
     const tr = document.createElement("tr"); tr.style.setProperty("--i", i);
-    const busted = row.roundScore === 0 && !row.flip7;
+    const busted = row.status === "busted";
     tr.innerHTML = `<td class="name"></td><td class="delta${busted ? " dash" : ""}"></td><td class="total"></td>`;
     tr.querySelector(".name").textContent = row.name + (row.flip7 ? " · Flip 7!" : "");
     tr.querySelector(".delta").textContent = busted ? "—" : `+${row.roundScore}`;
@@ -1534,7 +1656,7 @@ export function renderSheet(state, ctx) {
   const next = $("nextRoundBtn"); next.hidden = state.game.phase === "game_over";
   next.onclick = () => ctx.send({ type: "next-round", roundNumber: s.round });
   clearInterval(sheetTimer);
-  if (state.summaryTimer) { let left = state.summaryTimer.remainingMs; const total = 8000; const tick = () => { $("nextTrack").style.setProperty("--p", 1 - Math.max(0, left) / total); left -= 250; }; tick(); sheetTimer = setInterval(tick, 250); }
+  if (state.summaryTimer) { let left = state.summaryTimer.remainingMs; const total = state.summaryTimer.totalMs || 8000; const tick = () => { $("nextTrack").style.setProperty("--p", 1 - Math.max(0, left) / total); left -= 250; }; tick(); sheetTimer = setInterval(tick, 250); }
 }
 export function hideSheet() { $("summarySheet").hidden = true; clearInterval(sheetTimer); }
 export function renderResults(state, ctx) {
@@ -1646,7 +1768,7 @@ git commit -m "Keyed table reconciler, presenter wiring, pending controls, sheet
 
 **Interfaces:**
 - Consumes: table helpers from Task 7; step kinds from Task 3.
-- Implements `handlers.begin/end` for: `press-deck`, `travel`, `flip`, `rest`, `sort`, `hold`, `to-discard`, `park`, `beat`, `score-roll`, `pair`, `shake`, `sweep`, `shield-flash`, `token-land`, `token-arc`, `caption`, `round-start`, `reshuffle`.
+- Implements `handlers.begin/end` for: `press-deck`, `travel`, `flip`, `rest`, `sort`, `hold`, `to-discard`, `to-token`, `park`, `beat`, `score-roll`, `pair`, `shake`, `sweep`, `shield-flash`, `token-land`, `token-arc`, `caption`, `round-start`, `reshuffle`.
 - The transient reveal card lives in `#fxLayer`; one per player at a time, kept in a `Map` `flying` (player → element). Flight endpoints come from `getBoundingClientRect()`.
 
 - [ ] **Step 1: Add the reveal helpers and handlers**
@@ -1686,9 +1808,13 @@ Inside `createEffects`, before `return`, add:
     for (const c of table.parkedEl().querySelectorAll(`[data-player="${s.player}"]`)) c.remove(); };
   E.sweep = (s) => { const h = table.handEl(s.player); if (h) { h.classList.remove("sweeping"); table.clearHand(s.player); } const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } table.setStatus(s.player, "busted"); table.setRoundScore(s.player, 0); table.setDiscardTop(s.card ?? null); };
   H["shield-flash"] = (s) => { const sh = table.seatEl(s.player)?.querySelector(".shield"); if (sh) { sh.hidden = false; sh.classList.remove("flash"); void sh.offsetWidth; sh.classList.add("flash"); } };
-  H["token-land"] = (s) => { table.setShield(s.player, true); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (sh) { sh.classList.add("flash"); } };
+  // A kept Second Chance never touches the discard: the flying card shrinks into the shield token.
+  H["to-token"] = (s) => { const el = flying.get(s.player); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); if (sh) { sh.hidden = false; place(el, rect(sh)); } el.style.opacity = "0"; el.style.transition += ", opacity " + s.ms + "ms"; } };
+  E["to-token"] = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } };
+  H["token-land"] = (s) => { table.setShield(s.player, true); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (sh) { sh.classList.remove("flash"); void sh.offsetWidth; sh.classList.add("flash"); } };
   E["token-land"] = (s) => table.seatEl(s.player)?.querySelector(".shield")?.classList.remove("flash");
-  H["token-arc"] = (s) => { const from = table.seatEl(s.from)?.querySelector(".shield"), to = table.seatEl(s.to); if (!to) return; const tok = document.createElement("span"); tok.className = "shield reveal-token"; tok.style.position = "fixed"; tok.style.zIndex = 41; tok.style.transition = `transform ${s.ms}ms var(--move)`; const a = from ? rect(from) : rect(table.discardEl()); const b = rect(to.querySelector(".hand")); tok.style.left = `${a.left}px`; tok.style.top = `${a.top}px`; $("fxLayer").appendChild(tok); void tok.offsetWidth; tok.style.transform = `translate(${b.right - 26 - a.left}px, ${b.top - a.top}px)`; tok.dataset.to = s.to; table.setShield(s.from, false); };
+  // The given card is the giver's *second* Second Chance: it arcs from the discard, and the giver keeps their own shield.
+  H["token-arc"] = (s) => { const to = table.seatEl(s.to); if (!to) return; const tok = document.createElement("span"); tok.className = "shield reveal-token"; tok.style.position = "fixed"; tok.style.zIndex = 41; tok.style.transition = `transform ${s.ms}ms var(--move)`; const a = rect(table.discardEl()); const b = rect(to.querySelector(".hand")); tok.style.left = `${a.left}px`; tok.style.top = `${a.top}px`; $("fxLayer").appendChild(tok); void tok.offsetWidth; tok.style.transform = `translate(${b.right - 26 - a.left}px, ${b.top - a.top}px)`; };
   E["token-arc"] = (s) => { for (const t of $("fxLayer").querySelectorAll(".reveal-token")) t.remove(); table.setShield(s.to, true); };
   H.caption = () => {};
   H["round-start"] = () => { table.hideSheet(); for (const el of flying.values()) el.remove(); flying.clear(); $("parked").textContent = ""; };
@@ -1699,7 +1825,7 @@ Inside `createEffects`, before `return`, add:
 
 Note for `rest`, `hold`, `beat`: no handler is needed; the queue simply waits.
 
-`score-roll` reads the round score from the latest snapshot: acceptable because a modifier never changes another player's score and the latest snapshot is at least as new as the step. `sweep` for a bust must show the bust card on the discard: the `bust` step carries `card`, so `E.sweep` receives it through the planner's `sweep` step; add `card: e.card` to the `sweep` step in `sequence.js` (`S("sweep", T.sweep, { player: e.player, card: e.card, min: MIN.sweep })`) and update the bust test's expectation if it compares the whole step object (it does not; it checks `kinds` and `ms`).
+`score-roll` reads the round score from the latest snapshot: acceptable because a modifier never changes another player's score and the latest snapshot is at least as new as the step. The planner's `sweep` step already carries `card` (the bust card), which `E.sweep` puts on the discard. Under reduced motion the planner gives `flip` 120 ms and zeroes the rest: in `H.flip`, when `s.ms <= 120`, skip the rotateY and instead add the class `emph` to the reveal card (the 120 ms colour emphasis) and swap to the face immediately.
 
 - [ ] **Step 2: Verify in Chrome**
 
@@ -1809,7 +1935,7 @@ git commit -m "Lobby open seats, log wording, responsive polish"
 
 - [ ] **Step 1: Full Chrome pass (spec §5)**
 
-With the server on a free port, in a phone-width tab and a desktop-width tab: quick play through a bust, a Flip Three, a Second Chance save, a Freeze, a round summary, and game over. Reload mid-round: the table renders the snapshot with no replay and no `Catching up…` unless the window slid. Simulate an error on a pending Hit by sending a stale act from the console (`net` is not global; instead press Hit twice quickly: the second press is ignored locally and the first resolves) and confirm the buttons re-enable on the next state. Toggle reduced motion once. Record any defect, fix it in the module that owns it, add a `sequence`/`present` test if the defect was in planning or queue logic, and re-run `npm test`.
+With the server on a free port, in a phone-width tab and a desktop-width tab: quick play through a bust, a Flip Three, a Second Chance save, a Freeze, a round summary, and game over. Reload mid-round: the table renders the snapshot with no replay and no `Catching up…` unless the window slid. Exercise the error path for a pending action: open the room in two tabs of the same profile (they share the seat token, and the second tab takes the seat over); press Hit in the first tab. Its socket closes with the takeover code, `onError` runs `table.clearPending()`, and the join card appears with no dead buttons behind it. Then in the live tab press Hit twice quickly: the second press is ignored locally and the buttons re-enable on the next state. Toggle reduced motion once. Record any defect, fix it in the module that owns it, add a `sequence`/`present` test if the defect was in planning or queue logic, and re-run `npm test`.
 
 - [ ] **Step 2: Docs**
 
@@ -1835,7 +1961,7 @@ git commit -m "Document the presentation queue and bot delays"
 
 - [ ] **Step 1: Run the review**
 
-Dispatch the `codex:codex-rescue` agent (read-only) against the worktree with: the spec path, the plan path, `git diff main...HEAD --stat`, and the instruction to review the finished branch for (a) spec conformance of `sequence.js`/`present.js`/`effects.js`/`table.js`, (b) correctness risks in the queue (barrier, cap, compression, reset), (c) visual/UX quality against spec §4 from the CSS and markup, (d) accessibility (live region, focus, aria labels), (e) test adequacy. It must end its report with a line `Verdict: PASS` or `Verdict: BLOCK` followed by findings ranked by severity.
+This task is run by the orchestrating session (which has the `codex:codex-rescue` agent type), not by an implementation subagent. Dispatch the `codex:codex-rescue` agent (read-only) against the worktree with: the spec path, the plan path, `git diff main...HEAD --stat`, and the instruction to review the finished branch for (a) spec conformance of `sequence.js`/`present.js`/`effects.js`/`table.js`, (b) correctness risks in the queue (barrier, cap, compression, reset), (c) visual/UX quality against spec §4 from the CSS and markup, (d) accessibility (live region, focus, aria labels), (e) test adequacy. It must end its report with a line `Verdict: PASS` or `Verdict: BLOCK` followed by findings ranked by severity.
 
 - [ ] **Step 2: Record and act**
 

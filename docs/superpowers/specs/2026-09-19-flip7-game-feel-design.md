@@ -193,6 +193,15 @@ Codex subagent review of the finished branch: verdict recorded in `docs/superpow
 7. Landing, lobby, summary sheet, results.
 8. Responsive, keyboard, reconnect verification; docs; Codex review.
 
-## 7. Do not
+## 7. Amendments (from the Codex plan review, 2026-09-19)
+
+- The Second Chance `pair` step is 400 ms with a 400 ms floor (was 350 with a 400 total floor, which was contradictory); `shield-flash` 300 ms, floor 150.
+- A kept Second Chance never goes to the discard: the reveal ends with a `to-token` step into the shield, and a given one arcs from the discard (it is the giver's second card).
+- `timer` and `summaryTimer` carry `totalMs` so the countdown ring and the Next round track use the configured `TURN_MS` / `ROUND_SUMMARY_MS`.
+- `roundSummary.rows[i].status` carries the line status so the sheet shows an em dash only for busted players.
+- Only the newest barrier enables input: an older barrier's render is followed by a pre-render of the latest snapshot.
+- The 4 s cap is enforced by a per-barrier deadline that cuts the active step; a new round arriving during the sheet's reveal cuts it to 300 ms.
+
+## 8. Do not
 
 Render the snapshot first and animate ghosts over it. Use modals for routine card events. Add looping glows, particles, or confetti. Shrink six full rows until cards are unreadable. Let presentation delay input silently or past the 4 s cap.
