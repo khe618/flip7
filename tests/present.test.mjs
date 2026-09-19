@@ -31,6 +31,7 @@ function fx() {
     begin: (st) => log.push(["begin", st.kind]),
     end: (st) => log.push(["end", st.kind]),
     caption: (t) => log.push(["caption", t]),
+    scaffold: (s) => log.push(["scaffold", s.game.turnNumber]),
   };
 }
 
@@ -74,6 +75,18 @@ test("lobby to playing animates the first deal (cursor starts at 0)", async () =
   assert.ok(e.log.some((l) => l[0] === "begin" && l[1] === "travel"), "the deal travels");
   await c.advance(5000);
   assert.deepEqual(e.log.at(-1), ["render", 1]);
+});
+
+test("lobby to playing scaffolds the table before the first deal step begins", async () => {
+  const e = fx(), c = clock();
+  const p = createPresenter({ effects: e, clock: c });
+  p.enqueue(snap({ phase: "lobby", gameId: null }));
+  e.log.length = 0;
+  p.enqueue(snap({ gameId: 1, history: [ev("round_started", { roundNumber: 1, dealer: "a" }), ev("dealt", { player: "a", card: 5 }), ev("dealt", { player: "b", card: 9 })] }));
+  const scaffoldIdx = e.log.findIndex((l) => l[0] === "scaffold");
+  const beginIdx = e.log.findIndex((l) => l[0] === "begin");
+  assert.deepEqual(e.log[scaffoldIdx], ["scaffold", 1]);
+  assert.ok(scaffoldIdx >= 0 && scaffoldIdx < beginIdx, "scaffold ran before the first begin");
 });
 
 test("a repeated snapshot enqueues nothing new", async () => {
@@ -234,4 +247,16 @@ test("a render that throws on a barrier is caught, and the presenter self-heals 
   await c.advance(1000);
   assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 3), "a later snapshot renders normally (self-heal)");
   assert.equal(calls, 3);
+});
+
+test("an end() that throws on the barrier itself still reconciles via render", async () => {
+  const e = fx(), c = clock();
+  const effects = { ...e, end: (st) => { if (st.kind === "barrier") throw new Error("boom"); e.log.push(["end", st.kind]); } };
+  const p = createPresenter({ effects, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  p.enqueue(snap({ turnNumber: 2, history: [...h, ev("hit", { player: "a", card: 7 })] }));
+  await c.advance(1000);
+  assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 2), "the barrier still reconciled despite end() throwing");
+  assert.ok(p.isIdle());
 });

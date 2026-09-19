@@ -95,7 +95,7 @@ input:focus-visible { border-color: var(--gold); }
 .countdown .arc { stroke: var(--muted); stroke-dasharray: 106.8; stroke-dashoffset: calc(106.8 * (1 - var(--p, 1))); transition: stroke-dashoffset 250ms linear, stroke 250ms; }
 .countdown.warn .arc { stroke: var(--gold); } .countdown.hot .arc { stroke: var(--coral); } .countdown.crit .arc { stroke: var(--danger); }
 .countdown b { font-family: var(--deck); font-size: .95rem; }
-.countdown.crit b { animation: tick 900ms var(--snap); }
+.countdown b.tock { animation: tick 900ms var(--snap); }
 @keyframes tick { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
 
 .seats { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -136,7 +136,8 @@ input:focus-visible { border-color: var(--gold); }
 .discard .u1 { transform: rotate(-6deg) translate(-2px, 1px); } .discard .u2 { transform: rotate(2deg) translate(1px, -1px); }
 .discard .top { position: absolute; inset: 0; transform: rotate(4deg); }
 .discard .parked { position: absolute; left: calc(100% + 8px); top: 0; display: flex; gap: 4px; }
-.discard .parked .playing-card { opacity: .9; outline: 1px dashed var(--gold); }
+.discard .parked .playing-card { opacity: .9; outline: 1px dashed var(--gold); position: relative; }
+.discard .parked .playing-card::after { content: "…"; position: absolute; right: -6px; top: -8px; font: 700 11px var(--deck); color: var(--gold); background: var(--rail); border-radius: 8px; padding: 0 4px; }
 
 .your-rail { position: relative; padding: 10px 12px 12px; border-radius: var(--radius); background: linear-gradient(180deg, var(--surface), #101a18); border: 1px solid var(--edge); box-shadow: 0 -8px 24px rgba(0,0,0,.35); }
 .your-rail .seat { min-height: 0; padding: 0; background: none; border: 0; }

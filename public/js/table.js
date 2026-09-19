@@ -2,6 +2,7 @@ import { renderLog } from "./log.js";
 import { cardKind } from "./sequence.js";
 const $ = (id) => document.getElementById(id);
 const LABEL = { freeze: "Freeze", flip_three: "Flip 3", second_chance: "2nd Chance" };
+const TARGET_PROMPT = { freeze: "Freeze whom?", flip_three: "Who flips three?", second_chance: "Give Second Chance to:" };
 const ARIA = (card) => typeof card === "number" ? `number ${card}` : card === "x2" ? "times 2" : card.startsWith("+") ? `plus ${card.slice(1)}` : (LABEL[card] || card);
 const GLYPH = {
   freeze: '<svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M5 5l14 14M19 5L5 19"/></svg>',
@@ -103,7 +104,10 @@ function ensureSeat(container, p) {
   return li;
 }
 export function render(state, ctx) { mount.state = state; paint(state, ctx, true); }
-export function preRender(state, ctx) { mount.state = state; paint(state, ctx, false); }
+// `_arrivedAt` timestamps the moment this snapshot object reached the client,
+// so the summary sheet's progress track can subtract playback delay from
+// `summaryTimer.remainingMs` instead of restarting from it (renderSheet below).
+export function preRender(state, ctx) { mount.state = state; if (state._arrivedAt === undefined) state._arrivedAt = performance.now(); paint(state, ctx, false); }
 
 function paint(state, ctx, settled) {
   const g = state.game; if (!g) return;
@@ -114,8 +118,11 @@ function paint(state, ctx, settled) {
   $("turnWho").textContent = g.phase === "round" ? (g.current_player === state.you ? "Your decision" : `${nameOf(g.current_player)} is deciding`) : g.phase === "round_over" ? "Round over" : "";
   clearInterval(countdown); const cd = $("countdown");
   if (state.timer && g.phase === "round") {
-    cd.hidden = false; let remaining = state.timer.remainingMs; const total = state.timer.totalMs || 30000;
-    const tick = () => { const s = Math.ceil(Math.max(0, remaining) / 1000); $("countNum").textContent = s; cd.style.setProperty("--p", Math.max(0, remaining) / total); cd.classList.toggle("warn", s <= 6 && s > 4); cd.classList.toggle("hot", s <= 4 && s > 2); cd.classList.toggle("crit", s <= 2); remaining -= 250; };
+    cd.hidden = false; let remaining = state.timer.remainingMs; const total = state.timer.totalMs || 30000; let lastSecond = null;
+    // Restart the numeral's pop each time the final three integers change, not just once on entering "crit".
+    const tick = () => { const s = Math.ceil(Math.max(0, remaining) / 1000); const num = $("countNum"); num.textContent = s; cd.style.setProperty("--p", Math.max(0, remaining) / total); cd.classList.toggle("warn", s <= 6 && s > 4); cd.classList.toggle("hot", s <= 4 && s > 2); cd.classList.toggle("crit", s <= 2);
+      if (s !== lastSecond) { lastSecond = s; if (s <= 3) { num.classList.remove("tock"); void num.offsetWidth; num.classList.add("tock"); } }
+      remaining -= 250; };
     tick(); countdown = setInterval(tick, 250);
   } else cd.hidden = true;
   // seats (only on settled renders: a pre-render must not jump the hands ahead of the animation)
@@ -156,7 +163,7 @@ function paint(state, ctx, settled) {
     const wait = !settled && !pending;
     for (const b of [$("hitBtn"), $("stayBtn")]) b.disabled = wait || !!pending;
     if (!pending) { $("hitBtn").querySelector(".label").textContent = wait ? "Finishing reveal…" : "Hit"; $("stayBtn").querySelector(".label").textContent = "Stay"; if (!wait) { $("hitBtn").style.width = ""; $("stayBtn").style.width = ""; } }
-    if (settled && !pending && g.turnNumber !== lastTurnCued && document.activeElement !== $("stayBtn")) {
+    if (settled && !pending && g.turnNumber !== lastTurnCued) {
       lastTurnCued = g.turnNumber;
       $("hitBtn").focus({ preventScroll: true }); $("hitBtn").classList.remove("pulse"); void $("hitBtn").offsetWidth; $("hitBtn").classList.add("pulse");
       const rail = $("yourRail"); rail.classList.remove("sweep-gold"); void rail.offsetWidth; rail.classList.add("sweep-gold");
@@ -165,7 +172,7 @@ function paint(state, ctx, settled) {
   }
   if (mine && mine.type === "choose_target") {
     const picker = $("targetPicker"); picker.textContent = "";
-    const h = document.createElement("p"); h.textContent = `Give ${LABEL[mine.card]} to:`; picker.appendChild(h);
+    const h = document.createElement("p"); h.textContent = TARGET_PROMPT[mine.card] || `Give ${LABEL[mine.card]} to:`; picker.appendChild(h);
     mine.candidates.forEach((id, i) => {
       const p = g.players.find((q) => q.id === id);
       const b = document.createElement("button"); b.className = "big"; b.disabled = !settled || !!pending;
@@ -197,7 +204,12 @@ export function renderSheet(state, ctx) {
   const next = $("nextRoundBtn"); next.hidden = state.game.phase === "game_over";
   next.onclick = () => ctx.send({ type: "next-round", roundNumber: s.round });
   clearInterval(sheetTimer);
-  if (state.summaryTimer) { let left = state.summaryTimer.remainingMs; const total = state.summaryTimer.totalMs || 8000; const tick = () => { $("nextTrack").style.setProperty("--p", 1 - Math.max(0, left) / total); left -= 250; }; tick(); sheetTimer = setInterval(tick, 250); }
+  if (state.summaryTimer) {
+    const total = state.summaryTimer.totalMs || 8000;
+    let left = state.summaryTimer.remainingMs - (performance.now() - (state._arrivedAt ?? performance.now()));
+    const tick = () => { $("nextTrack").style.setProperty("--p", 1 - Math.max(0, left) / total); left -= 250; };
+    tick(); sheetTimer = setInterval(tick, 250);
+  }
 }
 export function hideSheet() { $("summarySheet").hidden = true; clearInterval(sheetTimer); }
 export function renderResults(state, ctx) {

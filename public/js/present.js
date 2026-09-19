@@ -7,7 +7,7 @@ const noop = () => {};
 const defaultNameOf = (state) => { const m = new Map((state.game?.players || []).map((p) => [p.id, p.name])); return (id) => m.get(id) || id; };
 
 export function createPresenter({ effects, clock = defaultClock, reducedMotion = false, nameOf = defaultNameOf }) {
-  const fx = { preRender: noop, begin: noop, end: noop, caption: noop, ...effects };
+  const fx = { preRender: noop, begin: noop, end: noop, caption: noop, scaffold: noop, ...effects };
   let cursor = null, gameId = null, phase = null, latest = null;
   let queue = [], busy = false, gen = 0;
   let active = null;               // { step, resolve, timer } while a step is waiting
@@ -31,7 +31,7 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
   }
   function flush() {
     queue = []; gen += 1; busy = false;
-    if (active) { clock.clearTimeout(active.timer); active = null; }
+    if (active) { const a = active; clock.clearTimeout(a.timer); active = null; a.resolve(); }
     for (const id of deadlines) clock.clearTimeout(id); deadlines.clear();
   }
   // Barrier cap: when it fires and the barrier is still queued, drop everything
@@ -59,13 +59,19 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
           if (step.ms > 0) await wait(step, step.ms);
           if (myGen !== gen) return;
           fx.end(step);
-          if (step.kind === "barrier") {
+        } catch (err) {
+          console.error("[present] step failed", err);   // skip the bad step, keep the queue moving
+        }
+        // Reconcile lives outside the step's try/catch: a throwing begin/end on
+        // a barrier must not skip rendering the snapshot it carries.
+        if (step.kind === "barrier") {
+          try {
             clock.clearTimeout(step.capTimer); deadlines.delete(step.capTimer);
             fx.render(step.state);
             if (queue.some((s) => s.kind === "barrier")) fx.preRender(latest);   // an older barrier never enables input
+          } catch (err) {
+            console.error("[present] render failed", err);
           }
-        } catch (err) {
-          console.error("[present] step failed", err);   // skip the bad step, keep the queue moving
         }
       }
     } finally {
@@ -77,12 +83,16 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
     enqueue(state) {
       const prevPhase = phase; phase = state.phase;
       if (!state.game || state.phase === "lobby") { flush(); cursor = null; gameId = state.gameId ?? null; latest = state; fx.render(state); return; }
-      if (state.gameId !== gameId) { flush(); gameId = state.gameId; cursor = prevPhase === "lobby" ? 0 : null; }
+      if (state.gameId !== gameId) {
+        flush(); gameId = state.gameId;
+        cursor = prevPhase === "lobby" ? 0 : null;
+        if (cursor === 0) fx.scaffold(state);   // the table view is otherwise hidden and has no seats for the first deal
+      }
       latest = state;
       const hadCursor = cursor !== null;
       const r = newEvents(cursor, state.game);
       cursor = r.cursor;
-      if (r.reset) { flush(); fx.render(state); if (hadCursor) fx.caption("Catching up…"); return; }
+      if (r.reset) { flush(); fx.render(state); if (hadCursor) fx.caption("Catching up…", "", 600); return; }
       const steps = planSteps(r.events, state.game, { you: state.you, reducedMotion, nameOf: nameOf(state) });
       const barrier = steps[steps.length - 1];
       barrier.state = state; barrier.arrivedAt = clock.now();

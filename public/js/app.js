@@ -6,7 +6,7 @@ import { createPresenter } from "./present.js";
 import { createEffects } from "./effects.js";
 
 const $ = (id) => document.getElementById(id);
-let net = null, state = null, you = null, room = null, lastTurnRendered = -1, presenter = null;
+let net = null, state = null, you = null, room = null, presenter = null;
 
 export function showView(id) { for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== id; }
 export function toast(text) {
@@ -27,7 +27,7 @@ function leaveRoom() {
   table.stop();
   if (presenter) { presenter.reset(); presenter = null; }
   table.hideSheet();
-  state = null; you = null; room = null; lastTurnRendered = -1;
+  state = null; you = null; room = null;
   $("roomCode").hidden = true;
 }
 
@@ -49,7 +49,7 @@ async function newRoom(quick) {
 }
 
 function enterRoom(code, intent = null) {
-  room = code; you = null; state = null; lastTurnRendered = -1;
+  room = code; you = null; state = null;
   $("roomCode").textContent = code; $("roomCode").hidden = false;
   for (const el of document.querySelectorAll("[data-room]")) el.textContent = code;
   if (net) net.close();
@@ -91,7 +91,8 @@ function render() {
   const ctx = { send: (o) => net.send(o), you, toast, room, copyLink };
   if (state.phase === "lobby" || !state.game) { presenter.enqueue(state); showView("lobbyView"); lobby.render(state, ctx); return; }
   presenter.enqueue(state);
-  if (state.game.decision && state.game.turnNumber !== lastTurnRendered) { lastTurnRendered = state.game.turnNumber; live("Your turn"); }
+  // The turn strip already announces "Your decision" via the sole live region (#caption);
+  // no separate announcement is needed here.
 }
 
 window.addEventListener("popstate", route);

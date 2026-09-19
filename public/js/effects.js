@@ -3,19 +3,44 @@
 import * as table from "./table.js";
 const $ = (id) => document.getElementById(id);
 
+// A scaffold copy of `state` with every hand emptied out: used to reconcile
+// seats, names, banked scores, and the deck count before the first deal's
+// steps run, so they never travel against a hidden view with no seats.
+function emptyHands(state) {
+  const g = state.game;
+  return {
+    ...state,
+    game: {
+      ...g,
+      discard: [],
+      resolution: [],
+      players: g.players.map((p) => ({ ...p, numbers: [], modifiers: [], second_chance: false, status: "active", round_score: 0 })),
+    },
+  };
+}
+
 export function createEffects({ ctx, showView }) {
   const handlers = { begin: {}, end: {} };
-  function caption(text, tone = "") { const c = $("caption"); c.textContent = text || ""; c.className = `caption ${tone}`.trim(); }
+  let captionTimer = null;
+  function caption(text, tone = "", ttlMs = 0) {
+    const c = $("caption"); c.textContent = text || ""; c.className = `caption ${tone}`.trim();
+    clearTimeout(captionTimer); captionTimer = null;
+    if (ttlMs > 0) captionTimer = setTimeout(() => { c.textContent = ""; c.className = "caption"; }, ttlMs);
+  }
   // Built as a named object so Tasks 8 and 9 can add step handlers and wrap `render` before it is returned.
   const api = {
     handlers, caption,
+    scaffold(state) { showView("tableView"); table.hideSheet(); table.render(emptyHands(state), ctx); },
     render(state) {
-      if (!state.game) return;
+      if (!state.game) { table.hideSheet(); table.stop(); table.clearPending(); return; }
       const ph = state.game.phase;
       showView("tableView");
       table.render(state, ctx);
-      if (ph === "round_over") table.renderSheet(state, ctx);
-      else if (ph === "game_over") { table.hideSheet(); showView("resultsView"); table.renderResults(state, ctx); }
+      // The sheet/results steps already presented their view at the barrier
+      // that opened them; a later barrier's reconcile must not replay their
+      // row/fan animations or restart the progress track.
+      if (ph === "round_over") { if ($("summarySheet").hidden) table.renderSheet(state, ctx); }
+      else if (ph === "game_over") { table.hideSheet(); if ($("resultsView").hidden) { showView("resultsView"); table.renderResults(state, ctx); } }
       else table.hideSheet();
     },
     preRender(state) { table.preRender(state, ctx); },
@@ -46,8 +71,31 @@ export function createEffects({ ctx, showView }) {
   E.flip = (s) => { const el = flying.get(s.player); if (el) { el.classList.remove("flipping", "back", "emph"); el.style.setProperty("--ry", "0deg"); } };
   H.sort = (s) => { const el = flying.get(s.player); const real = table.addCard(s.player, s.card); if (real && el) { real.classList.add("new"); place(el, rect(real)); el.style.setProperty("--dur", `${s.ms}ms`); } };
   E.sort = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } const real = table.handEl(s.player)?.querySelector(".playing-card.new"); if (real) real.classList.remove("new"); };
-  H["to-discard"] = (s) => { const el = flying.get(s.player); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); place(el, rect(table.discardEl())); } const twin = table.cardEl(s.player, table.keyFor(s.card)); if (s.shield) { table.setShield(s.player, false); if (twin) twin.classList.remove("dup"); } };
-  E["to-discard"] = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } table.setDiscardTop(s.card); };
+  // A Second Chance save discards two objects: the duplicate card and the
+  // shield it spent. Clone the shield into #fxLayer as a fixed-position
+  // token so it visibly flies to discard too, instead of just vanishing.
+  H["to-discard"] = (s) => {
+    const el = flying.get(s.player); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); place(el, rect(table.discardEl())); }
+    const twin = table.cardEl(s.player, table.keyFor(s.card));
+    if (s.shield) {
+      const sh = table.seatEl(s.player)?.querySelector(".shield");
+      if (sh && !sh.hidden) {
+        const r = rect(sh);
+        const clone = sh.cloneNode(true);
+        clone.hidden = false; clone.classList.add("reveal-token");
+        clone.style.position = "fixed"; clone.style.left = `${r.left}px`; clone.style.top = `${r.top}px`;
+        clone.style.width = `${r.width}px`; clone.style.height = `${r.height}px`; clone.style.zIndex = 41;
+        clone.style.transition = `transform ${s.ms}ms var(--move)`;
+        $("fxLayer").appendChild(clone); void clone.offsetWidth;
+        const d = rect(table.discardEl());
+        clone.style.transform = `translate(${d.left - r.left}px, ${d.top - r.top}px)`;
+        s._shieldClone = clone;
+      }
+      table.setShield(s.player, false);
+      if (twin) twin.classList.remove("dup");
+    }
+  };
+  E["to-discard"] = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } table.setDiscardTop(s.card); if (s._shieldClone) { s._shieldClone.remove(); s._shieldClone = null; } };
   H.park = (s) => { const el = flying.get(s.player); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); place(el, rect(table.parkedEl().parentElement)); } };
   E.park = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } const c = table.makeCard(s.card, "sm"); c.dataset.player = s.player; table.parkedEl().appendChild(c); };
   H["score-roll"] = (s) => { const el = table.seatEl(s.player)?.querySelector(".round-score"); if (el) { el.classList.remove("roll"); void el.offsetWidth; el.classList.add("roll"); const p = latestPlayer(s.player); if (p) el.textContent = String(p.round_score); } };
