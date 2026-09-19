@@ -1608,7 +1608,13 @@ function paint(state, ctx, settled) {
     for (const li of seats.querySelectorAll(".seat")) if (!g.players.some((p) => p.id === li.dataset.player)) li.remove();
     $("deckCount").textContent = String(g.deck_remaining);
     setDiscardTop(g.discard.length ? g.discard.at(-1) : null);
+    // Open Flip Three frames are authoritative state: their set-aside cards stay parked
+    // and their pips stay lit across snapshots (a target decision can interrupt a frame).
     $("parked").textContent = "";
+    for (const f of g.resolution) {
+      if (f.card === "flip_three" && f.target && !f.ended && f.remaining > 0) setPips(f.target, f.remaining);
+      for (const c of f.setAside) { const el = makeCard(c, "sm"); el.dataset.player = f.target; $("parked").appendChild(el); }
+    }
     $("fxLayer").textContent = "";
   }
   // controls
@@ -1684,7 +1690,8 @@ const $ = (id) => document.getElementById(id);
 export function createEffects({ ctx, showView }) {
   const handlers = { begin: {}, end: {} };
   function caption(text, tone = "") { const c = $("caption"); c.textContent = text || ""; c.className = `caption ${tone}`.trim(); $("live").textContent = text || ""; }
-  return {
+  // Built as a named object so Tasks 8 and 9 can add step handlers and wrap `render` before it is returned.
+  const api = {
     handlers, caption,
     render(state) {
       if (!state.game) return;
@@ -1699,6 +1706,8 @@ export function createEffects({ ctx, showView }) {
     begin(step) { if (step.caption) caption(step.caption, step.kind === "pair" && /BUST/.test(step.caption) ? "loud" : /FLIP 7|SECOND CHANCE/.test(step.caption || "") ? "gold" : ""); (handlers.begin[step.kind] || (() => {}))(step); },
     end(step) { (handlers.end[step.kind] || (() => {}))(step); },
   };
+  // Tasks 8 and 9 insert their handler definitions here, before the return.
+  return api;
 }
 ```
 
@@ -1773,7 +1782,7 @@ git commit -m "Keyed table reconciler, presenter wiring, pending controls, sheet
 
 - [ ] **Step 1: Add the reveal helpers and handlers**
 
-Inside `createEffects`, before `return`, add:
+Inside `createEffects`, after the `const api = { ... };` object and before `return api;`, add:
 
 ```js
   const flying = new Map();
@@ -1786,6 +1795,9 @@ Inside `createEffects`, before `return`, add:
     void el.offsetWidth; flying.set(step.player, el); return el;
   }
   const H = handlers.begin, E = handlers.end;
+  // table.render empties #fxLayer, so a capped barrier must not leave detached
+  // reveal cards in the map: wrap render to clear it.
+  const baseRender = api.render; api.render = (state) => { flying.clear(); baseRender(state); };
   H["press-deck"] = () => table.deckEl().classList.add("press");
   E["press-deck"] = () => table.deckEl().classList.remove("press");
   H.travel = (s) => { const el = flying.get(s.player) || spawn(s); el.style.setProperty("--dur", `${s.ms}ms`); place(el, handTarget(s.player)); };
