@@ -156,8 +156,8 @@ input:focus-visible { border-color: var(--gold); }
 .fx-layer { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
 
 /* reveal card flight: effects.js sets --x/--y (translate to target) and toggles classes */
-.playing-card.reveal { transform: translate(var(--x, 0px), var(--y, 0px)) rotateY(var(--ry, 0deg)); transition: transform var(--dur, 240ms) var(--move); backface-visibility: hidden; }
-.playing-card.reveal.flipping { transition: transform var(--dur, 190ms) ease-in-out; }
+/* The flip is a Web Animations rotateY composited onto this base transform (effects.js H.flip); the perspective() here is what gives it depth. */
+.playing-card.reveal { transform: translate(var(--x, 0px), var(--y, 0px)) perspective(600px); transition: transform var(--dur, 240ms) var(--move); backface-visibility: hidden; }
 .seat.shake, .your-rail .seat.shake { animation: shake 280ms ease both; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(6px); } }
 .hand.sweeping .playing-card { transition: transform 320ms var(--move), opacity 320ms; transform: translate(var(--sx, 0px), var(--sy, 0px)) scale(.6); opacity: 0; }
