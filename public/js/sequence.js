@@ -128,6 +128,7 @@ export function compress(steps) {
   const out = [];
   for (const s of steps) {
     if (s.kind === "barrier") { out.push(s); continue; }   // by reference: the presenter's cap timer holds it
+    if (s.kind === "sheet" || s.kind === "results") { out.push(s); continue; }   // never compressed: see present.js enqueue
     if (s.tier === "cosmetic") continue;
     if (s.tier === "structural") { out.push({ ...s, ms: s.kind === "sweep" ? MIN.sweep : 0 }); continue; }
     out.push({ ...s, ms: Math.min(s.ms, s.min) });

@@ -175,6 +175,33 @@ test("the sheet cut never lengthens a wait that is already due sooner", async ()
   assert.ok(e.log.some((l) => l[0] === "end" && l[1] === "sheet"), "sheet ended at its own 60 ms remainder, not pushed out to 300 ms");
 });
 
+test("catch-up compression never shortens the game-over sheet or results", async () => {
+  const e = fx(), c = clock();
+  const times = [];
+  const effects = { ...e,
+    begin: (st) => { times.push(["begin", st.kind, c.now()]); e.log.push(["begin", st.kind]); },
+    end: (st) => { times.push(["end", st.kind, c.now()]); e.log.push(["end", st.kind]); },
+  };
+  const p = createPresenter({ effects, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h }));
+  const hist = [...h,
+    ev("hit", { player: "a", card: "+4" }), ev("hit", { player: "b", card: 8 }), ev("bust", { player: "b", card: 8 }),
+    ev("stay", { player: "a" }), ev("round_ended", { results: {} }), ev("game_over", { winner: "a" }),
+  ]; // playable total (excluding sheet/results) is well over 2.5 s, forcing compress
+  p.enqueue(snap({ turnNumber: 5, history: hist }));
+  await c.advance(5000);
+  const beginSheet = times.find((t) => t[0] === "begin" && t[1] === "sheet");
+  const endSheet = times.find((t) => t[0] === "end" && t[1] === "sheet");
+  const beginResults = times.find((t) => t[0] === "begin" && t[1] === "results");
+  const endResults = times.find((t) => t[0] === "end" && t[1] === "results");
+  assert.ok(beginSheet && endSheet, "sheet ran");
+  assert.equal(endSheet[2] - beginSheet[2], 900, "sheet runs its full 900 ms even under catch-up compression");
+  assert.ok(beginResults && endResults, "results ran");
+  assert.equal(endResults[2] - beginResults[2], 1500, "results runs its full 1500 ms even under catch-up compression");
+  assert.deepEqual(e.log.at(-1), ["render", 5]);
+});
+
 test("an effect that throws is caught so the queue keeps moving and the barrier still renders", async () => {
   const e = fx(), c = clock();
   let thrown = false;
@@ -186,4 +213,25 @@ test("an effect that throws is caught so the queue keeps moving and the barrier 
   await c.advance(1000);
   assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 2), "the barrier still rendered despite the thrown step");
   assert.ok(p.isIdle());
+});
+
+test("a render that throws on a barrier is caught, and the presenter self-heals on the next snapshot", async () => {
+  const e = fx(), c = clock();
+  let calls = 0;
+  const effects = { ...e, render: (s) => {
+    calls++;
+    if (calls === 2) throw new Error("boom");
+    e.log.push(["render", s.game ? s.game.turnNumber : s.phase]);
+  } };
+  const p = createPresenter({ effects, clock: c });
+  const h = [ev("round_started")];
+  p.enqueue(snap({ history: h })); // call 1: the reset-path render, succeeds
+  const h2 = [...h, ev("hit", { player: "a", card: 7 })];
+  p.enqueue(snap({ turnNumber: 2, history: h2 })); // call 2: the barrier render throws
+  await c.advance(1000);
+  assert.ok(p.isIdle(), "the queue is idle again after the barrier's render throws");
+  p.enqueue(snap({ turnNumber: 3, history: [...h2, ev("hit", { player: "b", card: 9 })] })); // call 3: renders normally
+  await c.advance(1000);
+  assert.ok(e.log.some((l) => l[0] === "render" && l[1] === 3), "a later snapshot renders normally (self-heal)");
+  assert.equal(calls, 3);
 });

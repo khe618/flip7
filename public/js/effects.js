@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 
 export function createEffects({ ctx, showView }) {
   const handlers = { begin: {}, end: {} };
-  function caption(text, tone = "") { const c = $("caption"); c.textContent = text || ""; c.className = `caption ${tone}`.trim(); $("live").textContent = text || ""; }
+  function caption(text, tone = "") { const c = $("caption"); c.textContent = text || ""; c.className = `caption ${tone}`.trim(); }
   // Built as a named object so Tasks 8 and 9 can add step handlers and wrap `render` before it is returned.
   const api = {
     handlers, caption,

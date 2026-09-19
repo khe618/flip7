@@ -201,6 +201,7 @@ Codex subagent review of the finished branch: verdict recorded in `docs/superpow
 - `roundSummary.rows[i].status` carries the line status so the sheet shows an em dash only for busted players.
 - Only the newest barrier enables input: an older barrier's render is followed by a pre-render of the latest snapshot.
 - The 4 s cap is enforced by a per-barrier deadline that cuts the active step; a new round arriving during the sheet's reveal cuts it to 300 ms.
+- Catch-up compression never shortens the `sheet`/`results` steps and they are excluded from the 2.5 s budget sum; the 300 ms sheet cut applies only when the next round arrives.
 
 ## 8. Do not
 

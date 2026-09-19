@@ -90,7 +90,12 @@ export function createPresenter({ effects, clock = defaultClock, reducedMotion =
       queue.push(...steps);
       armCap(barrier);
       fx.preRender(state);
-      if (totalMs(queue) > BUDGET_MS) queue = compress(queue);
+      // The 2.5 s catch-up budget covers only playable steps: sheet/results are
+      // excluded from the sum and never compressed (see sequence.js compress).
+      // The 300 ms sheet cut above applies only when a new round arrives
+      // (cutActive), never to catch-up compression.
+      const playable = queue.filter((s) => s.kind !== "sheet" && s.kind !== "results");
+      if (totalMs(playable) > BUDGET_MS) queue = compress(queue);
       if (!busy) pump();
     },
     reset() { flush(); cursor = null; gameId = null; phase = null; latest = null; },

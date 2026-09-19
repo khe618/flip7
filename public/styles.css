@@ -99,7 +99,9 @@ input:focus-visible { border-color: var(--gold); }
 @keyframes tick { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
 
 .seats { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.seats .seat:nth-child(5):last-child { grid-column: 1 / -1; }
+@media (max-width: 759px) {
+  .seats .seat:nth-child(5):last-child { grid-column: 1 / -1; }
+}
 .seat { position: relative; min-height: 76px; padding: 8px 10px; border-radius: var(--radius); background: rgba(23,36,33,.85); border: 1px solid var(--edge); border-left: 3px solid transparent; transition: border-color 180ms var(--move), background-color 180ms; }
 .seat.current { border-left-color: var(--gold); box-shadow: 0 0 0 1px rgba(246,185,65,.35); }
 .seat-head { display: flex; align-items: baseline; gap: 6px; font-size: .875rem; }
@@ -185,7 +187,7 @@ input:focus-visible { border-color: var(--gold); }
 
 /* ---------- landing / lobby / results ---------- */
 .landing .hero { display: flex; justify-content: center; margin: 10px 0 18px; height: 90px; }
-.landing .fan { position: absolute; transform: rotate(calc((var(--i) - 3) * 9deg)) translateY(calc(abs(var(--i) - 3) * 4px)); }
+.landing .fan { position: absolute; transform: rotate(calc((var(--i) - 3) * 9deg)) translate(calc((var(--i) - 3) * 26px), calc(abs(var(--i) - 3) * 4px)); }
 .landing .hero { position: relative; } .landing .hero .fan:nth-child(1) { --i: 0 } .landing .hero .fan:nth-child(2) { --i: 1 } .landing .hero .fan:nth-child(3) { --i: 2 } .landing .hero .fan:nth-child(4) { --i: 3 } .landing .hero .fan:nth-child(5) { --i: 4 } .landing .hero .fan:nth-child(6) { --i: 5 } .landing .hero .fan:nth-child(7) { --i: 6 }
 .lede { max-width: 34ch; color: var(--muted); font-size: 1.05rem; }
 .panel { padding: 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--edge); margin-bottom: 14px; }
@@ -236,7 +238,7 @@ button.link { min-height: 0; padding: 2px 6px; margin-left: auto; border: 0; bac
   .seats .seat:nth-child(1) { grid-area: s1; } .seats .seat:nth-child(2) { grid-area: s2; } .seats .seat:nth-child(3) { grid-area: s3; }
   .seats .seat:nth-child(4) { grid-area: s4; align-self: center; } .seats .seat:nth-child(5) { grid-area: s5; align-self: center; }
   .draw-zone { grid-area: draw; margin: 24px 0; align-self: center; } .your-rail { grid-area: rail; } .log { grid-area: log; }
-  .controls, .target-picker { grid-area: ctl; position: sticky; bottom: 0; }
+  .controls, .target-picker { grid-area: ctl; position: sticky; bottom: 0; margin: 0; max-width: none; width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

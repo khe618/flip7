@@ -8,7 +8,7 @@ const GLYPH = {
   flip_three: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="11" rx="1"/><rect x="8" y="7" width="8" height="11" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/></svg>',
   second_chance: '<svg viewBox="0 0 24 24"><path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z"/></svg>',
 };
-let countdown = null, pending = null, mounted = false;
+let countdown = null, pending = null, mounted = false, lastTurnCued = -1;
 
 export function keyFor(card, ordinal = 0) { return typeof card === "number" ? `n:${card}` : `m:${card}:${ordinal}`; }
 export function makeCard(card, size = "") {
@@ -22,7 +22,7 @@ export function makeCard(card, size = "") {
   return el;
 }
 
-export function stop() { clearInterval(countdown); countdown = null; $("seats").textContent = ""; $("yourRail").textContent = ""; clearPending(); }
+export function stop() { clearInterval(countdown); countdown = null; $("seats").textContent = ""; $("yourRail").textContent = ""; clearPending(); lastTurnCued = -1; }
 // Called on a newer turn, on reconnect, and on any server error: a lost action
 // must never leave the controls or the target picker dead.
 export function clearPending() {
@@ -156,7 +156,12 @@ function paint(state, ctx, settled) {
     const wait = !settled && !pending;
     for (const b of [$("hitBtn"), $("stayBtn")]) b.disabled = wait || !!pending;
     if (!pending) { $("hitBtn").querySelector(".label").textContent = wait ? "Finishing reveal…" : "Hit"; $("stayBtn").querySelector(".label").textContent = "Stay"; if (!wait) { $("hitBtn").style.width = ""; $("stayBtn").style.width = ""; } }
-    if (settled && !pending && document.activeElement !== $("stayBtn")) { $("hitBtn").focus({ preventScroll: true }); $("hitBtn").classList.remove("pulse"); void $("hitBtn").offsetWidth; $("hitBtn").classList.add("pulse"); }
+    if (settled && !pending && g.turnNumber !== lastTurnCued && document.activeElement !== $("stayBtn")) {
+      lastTurnCued = g.turnNumber;
+      $("hitBtn").focus({ preventScroll: true }); $("hitBtn").classList.remove("pulse"); void $("hitBtn").offsetWidth; $("hitBtn").classList.add("pulse");
+      const rail = $("yourRail"); rail.classList.remove("sweep-gold"); void rail.offsetWidth; rail.classList.add("sweep-gold");
+      setTimeout(() => rail.classList.remove("sweep-gold"), 600);
+    }
   }
   if (mine && mine.type === "choose_target") {
     const picker = $("targetPicker"); picker.textContent = "";

@@ -166,6 +166,26 @@ test("planSteps: an action drawn during Flip Three parks beside the discard, the
   assert.equal(k.filter((x) => x === "to-discard").length, 0, "the parked card is not sent to discard by the reveal");
 });
 
+test("planSteps: a Flip Three action card that itself starts a nested Flip Three", () => {
+  const steps = planSteps([
+    ev("hit", { player: "a", card: "flip_three" }), ev("flip_three_started", { from: "a", to: "b" }),
+    ev("flip_three_card", { player: "b", card: "flip_three" }), ev("set_aside", { player: "b", card: "flip_three" }),
+    ev("flip_three_card", { player: "b", card: 4 }), ev("flip_three_card", { player: "b", card: 6 }),
+    ev("flip_three_ended", { player: "b" }),
+    ev("flip_three_started", { from: "b", to: "b" }),
+    ev("flip_three_card", { player: "b", card: 2 }), ev("flip_three_card", { player: "b", card: 9 }), ev("flip_three_card", { player: "b", card: 11 }),
+    ev("flip_three_ended", { player: "b" }),
+  ], g1(), opts);
+  const k = kinds(steps);
+  const pipsSetIdx = [], pipsClearIdx = [];
+  k.forEach((kind, i) => { if (kind === "pips-set") pipsSetIdx.push(i); if (kind === "pips-clear") pipsClearIdx.push(i); });
+  assert.equal(pipsSetIdx.length, 2, "two flip_three_started events, two pips-set steps");
+  assert.equal(pipsClearIdx.length, 2, "two flip_three_ended events, two pips-clear steps");
+  assert.ok(pipsSetIdx[0] < k.indexOf("park"), "the first pips-set precedes the parked reveal");
+  assert.ok(pipsClearIdx[0] < pipsSetIdx[1], "pips-clear precedes the second pips-set");
+  assert.equal(k.filter((x) => x === "pip-remove").length, 6, "one pip-remove per flip_three_card across both frames");
+});
+
 test("planSteps: a Second Chance save inside Flip Three uses the same pair steps, then the Flip Three postlude", () => {
   const steps = planSteps([ev("flip_three_card", { player: "b", card: 5 }), ev("second_chance_saved", { player: "b", card: 5 })], g1(), opts);
   assert.deepEqual(kinds(steps), ["press-deck", "travel", "flip", "pair", "shield-flash", "to-discard", "beat", "pip-remove", "barrier"]);
@@ -216,6 +236,20 @@ test("planSteps: reduced motion removes travel/shake/sweep/score-roll/token-arc 
   assert.equal(byKind.pair, 500); assert.equal(byKind.hold, 550);
 });
 
+test("planSteps: reduced motion also zeroes to-token, park, notches, and reshuffle", () => {
+  const steps = planSteps([
+    ev("round_started", { roundNumber: 2, dealer: "b" }), ev("reshuffle", { count: 30 }),
+    ev("hit", { player: "a", card: "second_chance" }), ev("second_chance_kept", { player: "a" }),
+    ev("flip_three_card", { player: "b", card: "freeze" }), ev("set_aside", { player: "b", card: "freeze" }),
+    ev("hit", { player: "a", card: 11 }), ev("flip7", { player: "a" }),
+  ], g1(), { ...opts, reducedMotion: true });
+  const byKind = Object.fromEntries(steps.map((s) => [s.kind, s.ms]));
+  assert.equal(byKind.reshuffle, 0);
+  assert.equal(byKind["to-token"], 0);
+  assert.equal(byKind.park, 0);
+  assert.equal(byKind.notches, 0);
+});
+
 test("planSteps: an empty event list still yields the barrier", () => {
   assert.deepEqual(kinds(planSteps([], g1(2), opts)), ["barrier"]);
 });
@@ -240,4 +274,11 @@ test("compress drops cosmetic steps, zeroes structural ones except sweep, and fl
   assert.ok(totalMs(c) < totalMs(steps));
   assert.notEqual(c, steps, "returns a new array");
   assert.equal(steps.find((s) => s.kind === "travel").ms, 240, "input untouched");
+});
+
+test("compress leaves sheet and results at full length", () => {
+  const steps = planSteps([ev("stay", { player: "a" }), ev("round_ended", { results: {} }), ev("game_over", { winner: "a" })], g1(9), opts);
+  const c = compress(steps);
+  const sheet = c.find((s) => s.kind === "sheet"), results = c.find((s) => s.kind === "results");
+  assert.equal(sheet.ms, 900); assert.equal(results.ms, 1500);
 });
