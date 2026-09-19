@@ -121,3 +121,18 @@ export function planSteps(events, game, opts = {}) {
   out.push(C("barrier", 0, 0, { turnNumber: game.turnNumber }));
   return out;
 }
+
+export function totalMs(steps) { return steps.reduce((n, s) => n + s.ms, 0); }
+
+// Catch-up mode (spec §3.3): keep every consequential card readable at its
+// floor, drop decoration, collapse movement.
+export function compress(steps) {
+  const out = [];
+  for (const s of steps) {
+    if (s.kind === "barrier") { out.push(s); continue; }   // by reference: the presenter's cap timer holds it
+    if (s.tier === "cosmetic") continue;
+    if (s.tier === "structural") { out.push({ ...s, ms: s.kind === "sweep" ? MIN.sweep : 0 }); continue; }
+    out.push({ ...s, ms: Math.min(s.ms, s.min) });
+  }
+  return out;
+}

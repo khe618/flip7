@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { newEvents, cardKind, planSteps } from "../public/js/sequence.js";
+import { newEvents, cardKind, planSteps, compress, totalMs } from "../public/js/sequence.js";
 
 const ev = (type, fields = {}) => ({ type, turnNumber: 1, ...fields });
 const game = (history, history_start, extra = {}) => ({ history, history_start, turnNumber: 1, players: [], ...extra });
@@ -217,4 +217,26 @@ test("planSteps: reduced motion removes travel/shake/sweep/score-roll/token-arc 
 
 test("planSteps: an empty event list still yields the barrier", () => {
   assert.deepEqual(kinds(planSteps([], g1(2), opts)), ["barrier"]);
+});
+
+test("totalMs sums step durations", () => {
+  const steps = planSteps([ev("hit", { player: "a", card: 7 })], g1(), opts);
+  assert.equal(totalMs(steps), 880);
+});
+
+test("compress drops cosmetic steps, zeroes structural ones except sweep, and floors consequential ones", () => {
+  const steps = planSteps([ev("hit", { player: "a", card: "+4" }), ev("hit", { player: "b", card: 8 }), ev("bust", { player: "b", card: 8 })], g1(), opts);
+  const c = compress(steps);
+  assert.ok(!c.some((s) => s.kind === "score-roll"), "cosmetic dropped");
+  assert.equal(c.find((s) => s.kind === "travel").ms, 0);
+  assert.equal(c.find((s) => s.kind === "sweep").ms, 120);
+  assert.equal(c.find((s) => s.kind === "flip").ms, 120);
+  const pair = c.find((s) => s.kind === "pair"), hold = c.find((s) => s.kind === "hold");
+  assert.equal(pair.ms + hold.ms, 600, "bust floor survives compression");
+  const sc = compress(planSteps([ev("hit", { player: "a", card: 3 }), ev("second_chance_saved", { player: "a", card: 3 })], g1(), opts));
+  assert.equal(sc.find((s) => s.kind === "pair").ms, 400, "Second Chance pair floor");
+  assert.equal(c.at(-1).kind, "barrier");
+  assert.ok(totalMs(c) < totalMs(steps));
+  assert.notEqual(c, steps, "returns a new array");
+  assert.equal(steps.find((s) => s.kind === "travel").ms, 240, "input untouched");
 });
