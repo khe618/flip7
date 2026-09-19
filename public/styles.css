@@ -68,6 +68,7 @@ input:focus-visible { border-color: var(--gold); }
 .playing-card.sm.action svg { width: 16px; height: 16px; }
 .playing-card.back { background: var(--teal-back); border: 2px solid var(--gold); box-shadow: inset 0 0 0 3px var(--teal-back), inset 0 0 0 4px var(--gold), 0 2px 4px rgba(0,0,0,.45); color: var(--gold); }
 .playing-card.back::after { content: "7"; font-size: 20px; width: 26px; height: 26px; display: grid; place-items: center; background: var(--gold); color: var(--teal-back); clip-path: polygon(50% 0%, 90% 20%, 100% 60%, 75% 100%, 25% 100%, 0% 60%, 10% 20%); }
+.playing-card.back > b, .playing-card.back > i, .playing-card.back > svg { display: none; }
 .playing-card.sm.back::after { font-size: 13px; width: 18px; height: 18px; }
 .playing-card.dup { outline: 3px solid var(--danger); outline-offset: 1px; }
 .playing-card.new { animation: emphasis 120ms ease both; }

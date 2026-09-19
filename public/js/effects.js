@@ -35,7 +35,7 @@ export function createEffects({ ctx, showView }) {
   const H = handlers.begin, E = handlers.end;
   // table.render empties #fxLayer, so a capped barrier must not leave detached
   // reveal cards in the map: wrap render to clear it.
-  const baseRender = api.render; api.render = (state) => { flying.clear(); baseRender(state); };
+  const baseRender = api.render; api.render = (state) => { flying.clear(); $("fxLayer").textContent = ""; baseRender(state); };
   H["press-deck"] = () => table.deckEl().classList.add("press");
   E["press-deck"] = () => table.deckEl().classList.remove("press");
   H.travel = (s) => { const el = flying.get(s.player) || spawn(s); el.style.setProperty("--dur", `${s.ms}ms`); place(el, handTarget(s.player)); };
@@ -51,7 +51,7 @@ export function createEffects({ ctx, showView }) {
   H.park = (s) => { const el = flying.get(s.player); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); place(el, rect(table.parkedEl().parentElement)); } };
   E.park = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } const c = table.makeCard(s.card, "sm"); c.dataset.player = s.player; table.parkedEl().appendChild(c); };
   H["score-roll"] = (s) => { const el = table.seatEl(s.player)?.querySelector(".round-score"); if (el) { el.classList.remove("roll"); void el.offsetWidth; el.classList.add("roll"); const p = latestPlayer(s.player); if (p) el.textContent = String(p.round_score); } };
-  H.pair = (s) => { const el = flying.get(s.player); const twin = table.cardEl(s.player, table.keyFor(s.card)); if (twin) { twin.classList.add("dup"); if (el) { el.classList.add("dup"); const r = rect(twin); place(el, { left: r.right + 6, top: r.top, width: r.width, height: r.height }); el.style.setProperty("--dur", "160ms"); } } };
+  H.pair = (s) => { const el = flying.get(s.player); const twin = table.cardEl(s.player, table.keyFor(s.card)); if (twin) { twin.classList.add("dup"); if (el) { el.classList.add("dup"); const r = rect(twin); place(el, { left: r.right + 6, top: r.top + (r.height - el.offsetHeight) / 2, width: el.offsetWidth, height: el.offsetHeight }); el.style.setProperty("--dur", "160ms"); } } };
   H.shake = (s) => { const li = table.seatEl(s.player); if (li) { li.classList.remove("shake"); void li.offsetWidth; li.classList.add("shake"); } };
   E.shake = (s) => table.seatEl(s.player)?.classList.remove("shake");
   H.sweep = (s) => { const h = table.handEl(s.player); const el = flying.get(s.player); const d = rect(table.discardEl());
@@ -61,7 +61,7 @@ export function createEffects({ ctx, showView }) {
   E.sweep = (s) => { const h = table.handEl(s.player); if (h) { h.classList.remove("sweeping"); table.clearHand(s.player); } const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } table.setStatus(s.player, "busted"); table.setRoundScore(s.player, 0); table.setDiscardTop(s.card ?? null); };
   H["shield-flash"] = (s) => { const sh = table.seatEl(s.player)?.querySelector(".shield"); if (sh) { sh.hidden = false; sh.classList.remove("flash"); void sh.offsetWidth; sh.classList.add("flash"); } };
   // A kept Second Chance never touches the discard: the flying card shrinks into the shield token.
-  H["to-token"] = (s) => { const el = flying.get(s.player); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); if (sh) { sh.hidden = false; place(el, rect(sh)); } el.style.opacity = "0"; el.style.transition += ", opacity " + s.ms + "ms"; } };
+  H["to-token"] = (s) => { const el = flying.get(s.player); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (el) { el.style.setProperty("--dur", `${s.ms}ms`); if (sh) { sh.hidden = false; place(el, rect(sh)); } el.style.transition = `transform ${s.ms}ms var(--move), opacity ${s.ms}ms`; el.style.opacity = "0"; } };
   E["to-token"] = (s) => { const el = flying.get(s.player); if (el) { el.remove(); flying.delete(s.player); } };
   H["token-land"] = (s) => { table.setShield(s.player, true); const sh = table.seatEl(s.player)?.querySelector(".shield"); if (sh) { sh.classList.remove("flash"); void sh.offsetWidth; sh.classList.add("flash"); } };
   E["token-land"] = (s) => table.seatEl(s.player)?.querySelector(".shield")?.classList.remove("flash");
