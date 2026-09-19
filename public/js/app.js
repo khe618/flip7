@@ -38,7 +38,6 @@ function leaveRoom() {
   if (presenter) { presenter.reset(); presenter = null; }
   table.hideSheet();
   state = null; you = null; room = null;
-  $("roomCode").hidden = true;
 }
 
 function route() {
@@ -60,8 +59,6 @@ async function newRoom(quick) {
 
 function enterRoom(code, intent = null) {
   room = code; you = null; state = null;
-  $("roomCode").textContent = code; $("roomCode").hidden = false;
-  for (const el of document.querySelectorAll("[data-room]")) el.textContent = code;
   if (net) net.close();
   if (presenter) { presenter.reset(); presenter = null; }
   const ctx = { send: (o) => net && net.send(o), toast, room: code, copyLink };
@@ -83,14 +80,23 @@ function enterRoom(code, intent = null) {
     },
     onState: (msg) => { state = msg; render(); },
   });
-  if (intent === "quick") { net.send({ type: "quick-play", name: readName() || "You" }); intent = null; }
+  // Names are asked for on the way into a room, never on the landing page, so
+  // both intents land on the same name card; only the message Sit down sends differs.
+  if (intent === "quick") showJoin("quick");
   else if (!readToken(code)) showJoin();
 }
 
-function showJoin() {
+function showJoin(mode = "join") {
   showView("joinView");
+  const quick = mode === "quick";
+  $("joinTitle").textContent = quick ? "Quick play" : "Take a seat";
+  $("joinHint").textContent = quick ? "You and three bots. Enter a name to be dealt in." : "Enter a name to sit down, or send the link so a friend can join too.";
+  $("joinCopyLinkBtn").hidden = quick;
   $("joinName").value = readName();
-  $("joinBtn").onclick = () => { const name = $("joinName").value.trim() || "Player"; writeName(name); net.send({ type: "join", name }); };
+  $("joinBtn").onclick = () => {
+    const name = $("joinName").value.trim() || "Player"; writeName(name);
+    net.send({ type: quick ? "quick-play" : "join", name });
+  };
   $("joinCopyLinkBtn").onclick = copyLink;
 }
 
