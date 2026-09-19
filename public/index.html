@@ -15,7 +15,6 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">Flip 7 Arena</a>
-    <span id="roomCode" class="room-code" hidden></span>
     <span id="connPill" class="pill" hidden>reconnecting…</span>
   </header>
 
@@ -27,33 +26,30 @@
     <h1>Flip 7 Arena</h1>
     <p class="lede">Press your luck. Hit or stay. Seven different numbers ends the round.</p>
     <div class="panel">
-      <label>Your name <input id="nameInput" maxlength="16" autocomplete="nickname"></label>
       <button id="quickPlayBtn" class="primary big">Quick play</button>
+      <p class="hint">You and three bots, dealt in right away.</p>
     </div>
     <div class="secondary">
-      <button id="friendsBtn">Play with friends</button>
-      <form id="joinForm" class="join-form">
-        <input id="joinCode" maxlength="4" placeholder="room code" autocapitalize="none" autocomplete="off">
-        <button type="submit">Join</button>
-      </form>
+      <button id="friendsBtn" class="big">Play with friends</button>
+      <p class="hint">Opens a table you can share by link. Got a link? Just open it.</p>
     </div>
     <p class="foot-links"><a href="/how-to-play">How to play</a> · <a href="/agent-protocol">Agent protocol</a></p>
   </section>
 
   <section id="joinView" class="view" hidden>
-    <h2>Join room <span class="code-inline" data-room></span></h2>
-    <p class="hint">Share the link so a friend can take a seat too.</p>
-    <label>Your name <input id="joinName" maxlength="16"></label>
+    <h2 id="joinTitle">Take a seat</h2>
+    <p id="joinHint" class="hint">Share the link so a friend can take a seat too.</p>
+    <label>Your name <input id="joinName" maxlength="16" autocomplete="nickname"></label>
     <div class="actions">
       <button id="joinBtn" class="primary">Sit down</button>
-      <button id="joinCopyLinkBtn">Copy link</button>
+      <button id="joinCopyLinkBtn">Copy room link</button>
     </div>
     <p id="joinError" class="error" hidden></p>
   </section>
 
   <section id="lobbyView" class="view" hidden>
-    <button id="copyLinkBtn" class="code-big" title="Copy link"><span class="code-label">Room</span><span class="code-inline" data-room></span><span class="code-hint">tap to copy</span></button>
-    <p class="hint">Share the link. 2 to 6 players. First to 200 wins.</p>
+    <button id="copyLinkBtn" class="big share">Copy room link</button>
+    <p class="hint">Send the link to friends so they can sit down. 2 to 6 players. First to 200 wins.</p>
     <div class="felt-panel"><ul id="seatList" class="seat-list"></ul></div>
     <div class="actions">
       <button id="addBotBtn">Add bot</button>

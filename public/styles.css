@@ -28,7 +28,6 @@ a { color: var(--gold); text-underline-offset: 3px; }
 /* top rail: 44px */
 .topbar { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 max(16px, env(safe-area-inset-left)) 0 max(16px, env(safe-area-inset-right)); background: var(--rail); border-bottom: 1px solid var(--edge); position: sticky; top: 0; z-index: 20; }
 .brand { font-family: var(--deck); font-size: 1.3rem; font-weight: 800; color: var(--text); text-decoration: none; }
-.room-code { font-family: var(--deck); letter-spacing: .22em; color: var(--gold); }
 .pill { margin-left: auto; padding: 3px 11px; border-radius: 999px; border: 1px solid var(--coral); color: var(--coral); font-size: .8rem; }
 
 .view { width: 100%; max-width: 720px; margin: 0 auto; padding: 22px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
@@ -194,11 +193,9 @@ input:focus-visible { border-color: var(--gold); }
 .panel { padding: 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--edge); margin-bottom: 14px; }
 .panel button { width: 100%; }
 .secondary { display: grid; gap: 10px; margin-bottom: 18px; }
-.join-form { display: flex; gap: 10px; } .join-form input { margin-top: 0; width: 12ch; flex: 0 0 auto; font-family: var(--deck); font-size: 1.1rem; letter-spacing: .2em; text-transform: lowercase; }
+.landing .panel .hint, .landing .secondary .hint { margin: 8px 0 0; text-align: center; font-size: .875rem; }
 .foot-links { color: var(--muted); font-size: .875rem; }
-.code-inline { font-family: var(--deck); letter-spacing: .2em; color: var(--gold); }
-.code-big { width: 100%; display: grid; justify-items: center; gap: 2px; padding: 14px; margin-bottom: 10px; }
-.code-big .code-inline { font-size: 2.4rem; font-weight: 800; } .code-big .code-label, .code-big .code-hint { color: var(--muted); font-size: .8rem; }
+.share { width: 100%; margin-bottom: 10px; }
 .felt-panel { padding: 14px; border-radius: 16px; background: radial-gradient(120% 80% at 50% 20%, var(--felt-light), var(--felt)); border: 1px solid var(--edge); margin-bottom: 16px; }
 .seat-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .seat-list .seat { display: flex; align-items: center; gap: 8px; min-height: 52px; }
