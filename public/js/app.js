@@ -53,6 +53,7 @@ function enterRoom(code, intent = null) {
   $("roomCode").textContent = code; $("roomCode").hidden = false;
   for (const el of document.querySelectorAll("[data-room]")) el.textContent = code;
   if (net) net.close();
+  if (presenter) { presenter.reset(); presenter = null; }
   const ctx = { send: (o) => net && net.send(o), toast, room: code, copyLink };
   table.mount(ctx);
   presenter = createPresenter({ effects: createEffects({ ctx, showView }), reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches });

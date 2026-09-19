@@ -227,13 +227,13 @@ button.link { min-height: 0; padding: 2px 6px; margin-left: auto; border: 0; bac
    sides of the draw zone, your rail across the bottom. Same DOM: `.seats`
    becomes display: contents so each seat is placed by the table grid. ---------- */
 @media (min-width: 760px) {
-  .view.table { max-width: 1120px; display: grid; grid-template-columns: 1fr minmax(320px, 420px) 1fr; grid-template-areas: "strip strip strip" "s1 s2 s3" "s4 draw s5" "rail rail rail" "log log log"; column-gap: 20px; row-gap: 12px; align-items: start; }
+  .view.table { max-width: 1120px; display: grid; grid-template-columns: 1fr minmax(320px, 420px) 1fr; grid-template-areas: "strip strip strip" "s1 s2 s3" "s4 draw s5" "rail rail rail" "ctl ctl ctl" "log log log"; column-gap: 20px; row-gap: 12px; align-items: start; align-content: start; }
   .turn-strip { grid-area: strip; margin: 0; }
   .seats { display: contents; }
   .seats .seat:nth-child(1) { grid-area: s1; } .seats .seat:nth-child(2) { grid-area: s2; } .seats .seat:nth-child(3) { grid-area: s3; }
   .seats .seat:nth-child(4) { grid-area: s4; align-self: center; } .seats .seat:nth-child(5) { grid-area: s5; align-self: center; }
   .draw-zone { grid-area: draw; margin: 24px 0; align-self: center; } .your-rail { grid-area: rail; } .log { grid-area: log; }
-  .controls, .target-picker { position: sticky; }
+  .controls, .target-picker { grid-area: ctl; position: sticky; bottom: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

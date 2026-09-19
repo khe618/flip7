@@ -22,7 +22,7 @@ export function makeCard(card, size = "") {
   return el;
 }
 
-export function stop() { clearInterval(countdown); countdown = null; pending = null; }
+export function stop() { clearInterval(countdown); countdown = null; $("seats").textContent = ""; $("yourRail").textContent = ""; clearPending(); }
 // Called on a newer turn, on reconnect, and on any server error: a lost action
 // must never leave the controls or the target picker dead.
 export function clearPending() {
@@ -134,6 +134,7 @@ function paint(state, ctx, settled) {
       setPips(p.id, 0);
     }
     for (const li of seats.querySelectorAll(".seat")) if (!g.players.some((p) => p.id === li.dataset.player)) li.remove();
+    for (const li of rail.querySelectorAll(".seat")) if (!g.players.some((p) => p.id === li.dataset.player)) li.remove();
     $("deckCount").textContent = String(g.deck_remaining);
     setDiscardTop(g.discard.length ? g.discard.at(-1) : null);
     // Open Flip Three frames are authoritative state: their set-aside cards stay parked
