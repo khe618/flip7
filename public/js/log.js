@@ -7,7 +7,7 @@ export function describe(e, nameOf) {
     case "dealt": return `${n(e.player)} is dealt ${label(e.card)}`;
     case "hit": return `${n(e.player)} hits: ${label(e.card)}`;
     case "stay": return `${n(e.player)} stays`;
-    case "bust": return `${n(e.player)} busts on ${label(e.card)}`;
+    case "bust": return `${n(e.player)} busts on a duplicate ${label(e.card)}`;
     case "second_chance_saved": return `${n(e.player)} uses Second Chance on ${label(e.card)}`;
     case "second_chance_kept": return `${n(e.player)} keeps a Second Chance`;
     case "second_chance_given": return `${n(e.from)} gives Second Chance to ${n(e.to)}`;
@@ -17,7 +17,7 @@ export function describe(e, nameOf) {
     case "flip_three_card": return `${n(e.player)} flips ${label(e.card)}`;
     case "flip_three_ended": return `${n(e.player)}'s Flip 3 ends`;
     case "set_aside": return `${label(e.card)} set aside`;
-    case "flip7": return `${n(e.player)} FLIPS 7!`;
+    case "flip7": return `${n(e.player)} flips seven! +15`;
     case "reshuffle": return `Discard reshuffled (${e.count} cards)`;
     case "deck_exhausted": return `No cards left to flip`;
     case "round_ended": return `Round over`;

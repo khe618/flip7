@@ -8,4 +8,5 @@ Flip 7: real-time multiplayer card game (Express 5 + ws, vanilla JS, no build st
 - Every `lib/` factory takes injected `now/setTimeout/clearTimeout/random`; tests never sleep.
 - The app shell `public/index.html` is read once at startup; restart the server after editing it.
 - Deploy: Render web service `flip7` via `render.yaml`, auto-deploy from `main`; live at https://flip7-q7wz.onrender.com (the bare `flip7` subdomain was taken). Free tier sleeps and forgets rooms.
+- The browser client animates engine events from `game.history` via `public/js/sequence.js` (pure, tested) and `present.js`; `table.js` reconciles to the snapshot at each barrier. Keep `sequence.js`/`present.js` DOM-free.
 - Read `LEARNINGS.md` before debugging or editing.

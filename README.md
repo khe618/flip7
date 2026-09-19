@@ -10,7 +10,7 @@ A real-time multiplayer Flip 7 (press-your-luck card game) website — Express 5
 npm start
 ```
 
-Serves the app at `http://localhost:3000`. Create a room from the landing page, or quick-play against bots.
+Serves the app at `http://localhost:3000`. Create a room from the landing page, or quick-play against bots. Bots think for 1.8 to 2.6 s so reveals are readable (`BOT_DELAY_MIN_MS` / `BOT_DELAY_MAX_MS`).
 
 ## Test
 
