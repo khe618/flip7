@@ -84,7 +84,7 @@ export function createEffects({ ctx, showView }) {
   const prevLand = H["token-land"];
   H["token-land"] = (s) => { unpark(s.player); prevLand(s); };
   H["banked-stamp"] = (s) => { const st = table.seatEl(s.player)?.querySelector(".stamp"); if (st) { st.hidden = false; } table.setStatus(s.player, "stayed"); };
-  H.notches = (s) => { const h = table.handEl(s.player); if (!h) return; h.querySelectorAll(".notches").forEach((n) => { n.style.transition = "background 350ms linear"; n.style.setProperty("--n", 7); }); };
+  H.notches = (s) => { const h = table.handEl(s.player); if (!h) return; h.querySelectorAll(".notches").forEach((n) => { n.style.transition = "--n 350ms linear"; n.style.setProperty("--n", 7); }); };
   H["flip7-ring"] = (s) => { const li = table.seatEl(s.player); if (li) { li.classList.remove("flip7"); void li.offsetWidth; li.classList.add("flip7"); } };
   E["flip7-ring"] = (s) => table.seatEl(s.player)?.classList.remove("flip7");
   H.sheet = () => { const st = table.mount.state; if (st) table.renderSheet(st, ctx); };

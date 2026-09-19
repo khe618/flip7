@@ -130,6 +130,7 @@ function paint(state, ctx, settled) {
       li.querySelector(".banked").textContent = String(p.score);
       li.querySelector(".round-score").textContent = String(p.round_score);
       li.querySelector(".hand").classList.toggle("frozen", p.status === "frozen");
+      li.querySelector(".stamp").hidden = p.status !== "stayed";
       reconcileHand(li.querySelector(".hand"), p, mine ? "" : "sm");
       setPips(p.id, 0);
     }

@@ -2,6 +2,8 @@
    thing: every consequential card travels from the deck to a player before the
    interface settles. Numbers are warm paper, actions coral, modifiers cyan. */
 
+@property --n { syntax: "<number>"; inherits: false; initial-value: 0; }
+
 :root {
   --rail: #111917; --felt: #071C1A; --felt-light: #0D2A26; --surface: #172421;
   --paper: #F4E6C5; --ink: #171914; --gold: #F6B941; --cyan: #50C7D9; --coral: #F06A62;
