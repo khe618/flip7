@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const readline = require("node:readline");
 const { PROTOCOL } = require("../../lib/request");
 const { AdapterError, TimeoutError } = require("../adapter");
+const { killTree } = require("./spawn");
 
 const LINE_CAP = 64 * 1024;
 const STDERR_CAP = 1024 * 1024;
@@ -16,18 +17,6 @@ function create(spec, command) {
   let helloResolve = null;
 
   function fail(msg) { return new AdapterError(`${spec}: ${msg}${stderr ? "\n--- stderr ---\n" + stderr.slice(-2000) : ""}`); }
-
-  // spawn() always runs `command` through a shell (see hello()). On Windows that shell is
-  // cmd.exe; child.kill() only terminates cmd.exe itself, not the real process it launched
-  // (Windows has no POSIX-style process groups here), so a hung agent survives as an orphan
-  // that keeps this adapter's stdio pipes open — discovered via a test that spawns an agent
-  // ignoring stdin close and asserts shutdown() actually ends it. taskkill /t kills the tree.
-  function killChild() {
-    // A failed spawn (taskkill missing from PATH) emits "error" on the child process object; with no
-    // listener that is an unhandled error event and takes the runner down during shutdown.
-    if (process.platform === "win32") spawn("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" }).on("error", () => {});
-    else child.kill("SIGKILL");
-  }
 
   function send(obj) {
     if (!child || exit) throw fail(`process exited (${exit ? `exit code ${exit.code}` : "not started"})`);
@@ -53,7 +42,8 @@ function create(spec, command) {
     spec, name: "?", version: "?",
     stderr: () => stderr,
     async hello() {
-      child = spawn(command, { shell: true, stdio: ["pipe", "pipe", "pipe"] });
+      // detached on Unix so killTree can SIGKILL the whole group (sh and everything it started).
+      child = spawn(command, { shell: true, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
       child.stdin.on("error", () => {});   // EPIPE after the agent exits must not crash the runner
       child.stderr.on("data", (b) => { stderr = (stderr + String(b)).slice(-STDERR_CAP); });
       child.on("exit", (code, signal) => {
@@ -95,7 +85,7 @@ function create(spec, command) {
         // taskkill runs as its own short-lived process, so its effect is not instant; the hard stop is
         // armed from inside the kill step, so it always allows ~2 s *after* the kill rather than
         // counting from the start of shutdown (where a slow stdin close would eat most of it).
-        const t = setTimeout(() => { killChild(); hardStop = setTimeout(finish, 2000); }, 2000);
+        const t = setTimeout(() => { killTree(child); hardStop = setTimeout(finish, 2000); }, 2000);
         child.once("exit", finish);
       });
     },
