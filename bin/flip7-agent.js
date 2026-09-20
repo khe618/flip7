@@ -35,13 +35,20 @@ let driver;
 try { driver = driveLiveSeat({ url: args.url, room: args.room, spec: args.spec, name: args.name, onEvent }); }
 catch (err) { console.error(`flip7-agent: ${err.message}`); process.exit(2); }   // resolveAgent rejects bad specs synchronously
 
+// stdout/stderr to a pipe are async on POSIX; an empty write's callback runs after everything
+// queued before it has been flushed, so this avoids truncating the last line (e.g. "game over")
+// when piped or spawned with piped stdio.
+function exit(code) {
+  process.stdout.write("", () => process.stderr.write("", () => process.exit(code)));
+}
+
 // First stop wins: a second signal exits immediately with the code chosen by the first.
 let exitCode = null;
 function stop(code) {
-  if (exitCode !== null) { process.exit(exitCode); return; }
+  if (exitCode !== null) { exit(exitCode); return; }
   exitCode = code;
-  setTimeout(() => process.exit(exitCode), 3000).unref();
-  driver.close().then(() => process.exit(exitCode), () => process.exit(exitCode));
+  setTimeout(() => exit(exitCode), 3000).unref();
+  driver.close().then(() => exit(exitCode), () => exit(exitCode));
 }
 process.on("SIGINT", () => stop(130));
 process.on("SIGTERM", () => stop(143));
