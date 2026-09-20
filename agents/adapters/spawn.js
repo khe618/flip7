@@ -34,6 +34,9 @@ function resolveExecutable(name, { env = process.env, platform = process.platfor
   return null;
 }
 
+// Precondition: `a` must not end in a backslash — a trailing `\` immediately before the closing
+// quote would escape it instead of terminating the argument. Current callers (BASE_ARGS, model
+// ids, the rendered request text) never do this.
 function quoteWindowsArg(a) { return a === "" || /\s/.test(a) ? `"${a}"` : a; }
 
 function spawnDirect(exe, args, opts = {}) {
@@ -57,6 +60,9 @@ function killTree(child) {
     spawn(taskkill, ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore", windowsHide: true }).on("error", () => { try { child.kill("SIGKILL"); } catch { /* gone */ } });
     return;
   }
+  // process.kill(-pid) signals the whole process group, which only works when the child was
+  // spawned `detached` (as spawnDirect and subprocess.js do) so it leads its own group; a child
+  // spawned attached would make -pid signal an unrelated group.
   try { process.kill(-child.pid, "SIGKILL"); } catch { try { child.kill("SIGKILL"); } catch { /* already gone */ } }
 }
 

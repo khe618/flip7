@@ -46,7 +46,9 @@ function create(spec, { command = process.env.FLIP7_CLAUDE_COMMAND || "claude", 
       catch (err) { reject(new AdapterError(`${spec}: could not start ${exe.path}: ${err.message}`)); return; }
       children.add(child);
       let stdout = "", stderr = "", settled = false;
-      const cap = (buf, b) => (buf.length >= OUT_CAP ? buf : buf + String(b).slice(0, OUT_CAP - buf.length));
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      const cap = (buf, b) => (buf.length >= OUT_CAP ? buf : buf + b.slice(0, OUT_CAP - buf.length));
       child.stdout.on("data", (b) => { stdout = cap(stdout, b); });
       child.stderr.on("data", (b) => { stderr = cap(stderr, b); });
       child.stdin.on("error", () => {});          // EPIPE if the child exits before reading
@@ -67,12 +69,15 @@ function create(spec, { command = process.env.FLIP7_CLAUDE_COMMAND || "claude", 
     let j = null;
     try { j = JSON.parse(r.stdout); } catch { /* not JSON */ }
     const ok = Boolean(j) && r.code === 0 && j.type === "result" && j.is_error === false && typeof j.result === "string";
-    const message = j && typeof j.result === "string" ? j.result : (r.stderr.trim() || r.stdout.trim() || `exit code ${r.code}`).slice(0, 500);
+    const message = (j && typeof j.result === "string" ? j.result : (r.stderr.trim() || r.stdout.trim() || `exit code ${r.code}`)).slice(0, 500);
     return { ok, json: j, message };
   }
 
   const adapter = {
     spec, name: "claude-code", version: "?",
+    // The identity string claude-code:<model> exceeds the server's 16-character seat name limit,
+    // so the seat is named "Claude" instead.
+    seatName: "Claude",
     async hello() {
       exe = resolveExecutable(exeName);
       if (!exe) throw new AdapterError(`${spec}: "${exeName}" not found on PATH. Install Claude Code (${INSTALL_URL}), run \`claude\` once to log in, then try again.`);
@@ -110,6 +115,7 @@ function create(spec, { command = process.env.FLIP7_CLAUDE_COMMAND || "claude", 
         const t = setTimeout(resolve, 2000);
         c.once("close", () => { clearTimeout(t); resolve(); });
       })));
+      try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* best effort */ }
     },
   };
   return adapter;

@@ -239,6 +239,7 @@ test("claude-code: hello probes a real call, reports version and effective model
   const h = await a.hello();
   assert.equal(a.name, "claude-code:claude-fake-1");
   assert.equal(a.version, "9.9.9");
+  assert.equal(a.seatName, "Claude");
   assert.equal(h.protocol, "flip7-agent/1");
   await a.shutdown();
 
@@ -298,16 +299,22 @@ test("claude-code: a slow reply is killed at the deadline (no orphan), shutdown 
   const d = await oneMove(a, 300);
   assert.equal(d.attempts[0].outcome, "timeout");
   assert.equal(d.fallback_used, true);
+  // pids()[0] is hello()'s own probe (mode "ok" while it ran), which already exited normally;
+  // pids()[1] is the first "sleep" move's timed-out child.
   const pids = () => fs.readFileSync(pidfile, "utf8").trim().split("\n").map(Number);
-  assert.equal(await untilDead(pids()[0]), true, "the timed-out child must be killed");
+  assert.equal(await untilDead(pids()[1]), true, "the timed-out child must be killed");
   // A second move starts a fresh child; shutdown during it must return within ~2 s and kill it.
   const pending = oneMove(a, 10000);
   await new Promise((r) => setTimeout(r, 300));
   const started = Date.now();
   await a.shutdown();
   assert.ok(Date.now() - started < 3000, "shutdown must not wait for the 5 s sleeper");
-  const d2 = await pending;
+  const withDeadline = Promise.race([
+    pending,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("shutdown failed to kill the 5 s sleeper")), 4000).unref()),
+  ]);
+  const d2 = await withDeadline;
   assert.equal(d2.fallback_used, true, "the killed move falls back rather than hanging");
-  assert.equal(await untilDead(pids()[1]), true, "the child live at shutdown must be killed");
+  assert.equal(await untilDead(pids()[2]), true, "the child live at shutdown must be killed");
   await assert.rejects(oneMove(a), (err) => err instanceof AdapterError && /shut down/.test(err.message), "no new process after shutdown");
 });

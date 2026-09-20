@@ -68,7 +68,7 @@ function driveLiveSeat({ url, room, spec, name, log = console.log, onEvent = nul
   // of leaving the driver stuck watching forever with a latch nothing will ever clear.
   function requestSeat() {
     if (seated || joinInFlight || resumeInFlight || settled || closed) return;
-    if (!send({ type: "join", name: name || adapter.name, agent: true })) { waitingForLobby = true; return; }
+    if (!send({ type: "join", name: name || adapter.seatName || adapter.name, agent: true })) { waitingForLobby = true; return; }
     joinInFlight = true; waitingForLobby = false;
   }
 
@@ -112,6 +112,7 @@ function driveLiveSeat({ url, room, spec, name, log = console.log, onEvent = nul
     stats.decisions += 1;
     if (d.fallback_used) stats.fallbacks += 1;
     if (closed) return;
+    if (!seated) return;   // the seat was lost while the decision was in flight
     if (acted.has(g.turnNumber)) { stats.repeatedStates += 1; return; }
     // A newer state for another turn arrived while deciding: the server already moved on
     // (it defaulted this turn, or the decision was resolved elsewhere). Never answer late.
@@ -136,7 +137,7 @@ function driveLiveSeat({ url, room, spec, name, log = console.log, onEvent = nul
     busy = true;
     try {
       while (latest && !closed) { const m = latest; latest = null; await handle(m); }
-    } catch (err) { finish(fatal(err)); }
+    } catch (err) { if (!closed) finish(fatal(err)); }
     finally { busy = false; }
   }
 
@@ -213,6 +214,7 @@ if (require.main === module) {
   try { a = parseArgs(process.argv.slice(2), { defaultUrl: "ws://localhost:3000" }); }
   catch (err) { if (!(err instanceof UsageError)) throw err; console.error(err.message); console.error(USAGE.replace(/flip7-agent/g, "node bench/live.js")); process.exit(1); }
   if (a.help) { console.log(USAGE.replace(/flip7-agent/g, "node bench/live.js")); process.exit(0); }
+  if (a.version) { console.log(require("../package.json").version); process.exit(0); }
   const d = driveLiveSeat({ url: a.url, room: a.room, spec: a.spec, name: a.name });
   d.done.then(async () => { await d.close(); process.exit(0); }, async (err) => { console.error(err.message); await d.close(); process.exit(exitCodeFor(err)); });
 }

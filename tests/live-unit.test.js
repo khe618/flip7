@@ -89,6 +89,20 @@ test("unknown_token clears identity and requests a fresh seat; a state with you:
   await driver.close();
 });
 
+test("unknown_token mid-decision clears the seat before the fallback act is sent", async () => {
+  // agent-hangs.js never resolves, so decide() times out at ~50 ms (300 ms remaining - 250);
+  // the unknown_token error is fed while that decision is genuinely still in flight.
+  const { driver, sent } = make({ spec: FIX("agent-hangs.js") });
+  driver._receive(joined);
+  const p = driver._receive(decisionState(1, 300));
+  await tick();      // let handle() advance past adapter.start() into the pending decide()
+  driver._receive({ type: "error", code: "unknown_token", message: "Unknown session." });
+  await p;
+  assert.equal(sent.filter((m) => m.type === "act").length, 0, "no act for a seat lost mid-decision");
+  assert.equal(joins(sent), 1, "losing the seat mid-decision still requests a fresh join");
+  await driver.close();
+});
+
 test("a visitor state during an in-flight resume is not a lost seat and triggers no join", async () => {
   const { driver, sent } = make();
   driver._receive(joined);
@@ -167,6 +181,18 @@ test("close() stops processing: no decision and no send after close", async () =
   await driver._receive(decisionState(3));
   assert.equal(sent.filter((m) => m.type === "act").length, 0);
   assert.equal(driver.stats.decisions, 0);
+});
+
+test("close() mid-decision does not reject done with an adapter error", async () => {
+  const { driver } = make({ spec: "bot:threshold25" });
+  driver._receive(joined);
+  driver._receive(decisionState(1));
+  const closing = driver.close();
+  let settled = false;
+  driver.done.then(() => { settled = true; }, () => { settled = true; });
+  await tick();
+  assert.equal(settled, false, "close() mid-decision must not reject done with an adapter error");
+  await closing;
 });
 
 test("a blocked join never latches joinInFlight: the next lobby state retries once sending works again", async () => {

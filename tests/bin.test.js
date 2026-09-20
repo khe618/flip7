@@ -66,32 +66,38 @@ async function host(room) {
 test("a bot seat plays a game from a room link and exits 0 with the standings", async () => {
   const room = "binz";
   const ws = await host(room);
-  const r = await runBin([`http://127.0.0.1:${PORT}/${room}`, "--agent", "bot:threshold25", "--name", "cli"]);
-  ws.close();
-  assert.equal(r.code, 0, r.stderr);
-  assert.match(r.stdout, /agent threshold25@/);
-  assert.match(r.stdout, new RegExp(`seated as s\\d+ in room ${room}`));
-  assert.match(r.stdout, /turn \d+: (hit|stay) \(\d+\.\d s\)/);
-  assert.match(r.stdout, /game over: .*\d/);
+  try {
+    const r = await runBin([`http://127.0.0.1:${PORT}/${room}`, "--agent", "bot:threshold25", "--name", "cli"]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.match(r.stdout, /agent threshold25@/);
+    assert.match(r.stdout, new RegExp(`seated as s\\d+ in room ${room}`));
+    assert.match(r.stdout, /turn \d+: (hit|stay) \(\d+\.\d s\)/);
+    assert.match(r.stdout, /game over: .*\d/);
+  } finally {
+    ws.close();
+  }
 });
 
 test("--quiet drops decision lines", async () => {
   const room = "quie";
   const ws = await host(room);
-  const r = await runBin([`http://127.0.0.1:${PORT}/${room}`, "--agent", "bot:threshold25", "--quiet"]);
-  ws.close();
-  assert.equal(r.code, 0, r.stderr);
-  assert.doesNotMatch(r.stdout, /turn \d+:/);
-  assert.match(r.stdout, /game over/);
+  try {
+    const r = await runBin([`http://127.0.0.1:${PORT}/${room}`, "--agent", "bot:threshold25", "--quiet"]);
+    assert.equal(r.code, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /turn \d+:/);
+    assert.match(r.stdout, /game over/);
+  } finally {
+    ws.close();
+  }
 });
 
 test("SIGINT during a game exits 130 after shutdown", { skip: process.platform === "win32" && "Windows cannot deliver SIGINT to a child" }, async () => {
   const room = "sigi";
   const child = spawn(process.execPath, [BIN, `http://127.0.0.1:${PORT}/${room}`, "--agent", "bot:threshold25"], { stdio: ["ignore", "pipe", "pipe"] });
-  await new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("never seated")), 10000); child.stdout.on("data", (b) => { if (/seated as/.test(String(b))) { clearTimeout(t); resolve(); } }); });
+  await new Promise((resolve, reject) => { const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("never seated")); }, 10000); child.stdout.on("data", (b) => { if (/seated as/.test(String(b))) { clearTimeout(t); resolve(); } }); });
   const started = Date.now();
   child.kill("SIGINT");
-  const code = await new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error("did not exit")), 6000); child.on("close", (c) => { clearTimeout(t); resolve(c); }); });
+  const code = await new Promise((resolve, reject) => { const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("did not exit")); }, 6000); child.on("close", (c) => { clearTimeout(t); resolve(c); }); });
   assert.equal(code, 130);
   assert.ok(Date.now() - started < 4000);
 });
