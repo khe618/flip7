@@ -2,6 +2,24 @@
 
 This is the normative document for third parties writing an agent for Flip 7 Arena. It is served at `GET /agent-protocol` and mirrors spec §5 of `docs/superpowers/specs/2026-09-17-flip7-design.md`. Protocol id: `"flip7-agent/1"`. Any breaking change bumps the id.
 
+## 0. Connect an agent in one command
+
+Seat your own agent at a live table from your machine, with nothing to host and nothing to configure (Node 22.12 or newer):
+
+```
+npx flip7-agent https://flip7-arena.onrender.com/abcd --agent file:./my-agent.js
+```
+
+Seat Claude through your local Claude Code install, billed to your subscription, no API key:
+
+```
+npx flip7-agent https://flip7-arena.onrender.com/abcd --agent claude-code
+```
+
+The first argument is the room link the lobby's Copy room link button gives you (a bare four-letter code works too). `--agent` takes any spec from §1. The driver connects out to the room over the browser's own WebSocket protocol, joins as an "agent" seat, and answers every decision for that seat under the normal turn timer. Whoever opened the room clicks Start game in their browser. The run ends when that game ends; run the command again to play another.
+
+It prints one line per event: `agent <name>@<version> ready`, `seated as p3 in room abcd`, `waiting for the lobby (game in progress)`, `turn 41: hit (2.3 s)` (`--quiet` hides these), `game over: Kenny 204, claude-code 171`. Exit codes: 0 the game ended; 1 usage error; 2 the agent could not be started or failed fatally mid-game; 3 the seat was taken over from another connection; 4 the room was full; 130/143 on Ctrl-C or SIGTERM. Per-move timeouts and invalid replies never end the run: the default action (§4) plays and the line says `fallback: timeout` or `fallback: invalid`.
+
 ## 1. Adapters
 
 An agent spec string selects the adapter:
@@ -12,6 +30,7 @@ An agent spec string selects the adapter:
 | `file:./path.js` | in-process | module exports `{ name, version, act(request) -> action \| Promise<action>, start?(info), end?(result) }` |
 | `cmd:"python agent.py"` | subprocess | JSONL over stdin/stdout, one JSON object per line |
 | `http://host:port` | HTTP | `POST /move` with the request, JSON reply |
+| `claude-code` or `claude-code:<model>` | local Claude Code | one `claude -p` process per decision; see §1.1 |
 
 **Identity.** Every agent has a `name` and a `version` string; in-process modules export them, HTTP agents return them from `GET /`, subprocess agents include them in their reply to `hello`. Logs and ratings key on `name@version`.
 
@@ -28,6 +47,10 @@ An agent spec string selects the adapter:
 - **In-process:** `hello` loads the module; `start`/`end` call the optional hooks; `shutdown` is a no-op. A promise still pending after its deadline is ignored when it settles. A `file:` spec may carry a `?fresh=<anything>` suffix (`file:./agent.js?fresh=2`): the path before the `?` is what is loaded, and the suffix forces a fresh module instance instead of the cached one. It exists as a test aid, so one fixture file can be seated twice in different modes.
 - **Subprocess:** one process per run, spawned at `hello`. Runner → agent lines are the payloads above; the agent answers `hello` with `{"name","version","protocol"}` and each `move` with `{"request_id","action"}`; it may answer `start`/`end` with anything or nothing. Replies are matched by `request_id`; a reply with an unknown or already-settled `request_id` is logged and discarded, so a late answer can never be consumed by the next move. A line with no `request_id` at all (non-JSON, or JSON without the field) is attributed to the single pending request when exactly one is pending and judged invalid, and discarded otherwise — always echo `request_id`. Stdout lines over 64 KB are an invalid reply. Stderr is captured into the log, capped at 1 MB per run. `shutdown` closes stdin, waits 2 s, then kills. If the process exits during a run, the run aborts with its exit code and last stderr.
 - **HTTP:** `hello` is `GET /` → `{ "name", "version", "protocol" }` (a protocol mismatch aborts the run). `start` and `end` are `POST /start` and `POST /end` with the payload as the body; replies are ignored. `move` is `POST /move` with `{ "request_id", "request" }`; the reply must be status 200 with JSON `{ "action" }` (`request_id` optional), at most 64 KB. Any other status, a non-JSON body, or a connection error is an invalid reply. A reply after the deadline is a timeout and the connection is dropped.
+
+### 1.1 The `claude-code` adapter
+
+Requires Claude Code on PATH and logged in. `hello` makes one real headless call, so a missing install, an expired login, or an unavailable model fails before the room is joined, with Claude Code's own message. Identity is `claude-code:<model id that answered>@<Claude Code version>`, so two players on different default models never share a ratings identity. Each decision runs `claude -p --tools "" --strict-mcp-config --setting-sources user --no-session-persistence --output-format json --system-prompt <fixed> [--model <model>]` in an empty temporary directory with the rendered request (`prompt/v1`) on stdin. Project and local Claude Code settings are not loaded; your user-level settings (hooks, default model) are. A reply that Claude Code reports as an error (`is_error`), a non-JSON reply, or a non-zero exit is an invalid reply and the default action plays; three such replies in a row end the run with exit 2. A reply slower than the turn timer is killed and the default action plays. No state is kept between decisions.
 
 The request and action are byte-identical across all three adapters.
 
@@ -129,13 +152,11 @@ Each writes `bench/results/<runId>/games.jsonl` and `summary.json`.
 
 ## 7. Live-room driver (`bench/live.js`)
 
-An agent can also join a live room as a WebSocket client, using the same protocol as the browser (spec §4.6). This is how an agent plays against humans or live bots instead of a benchmark suite.
+`npx flip7-agent <room-link> --agent <spec>` (§0) is the packaged form of `bench/live.js`; from a clone, `node bench/live.js <room-link-or-code> --agent <spec> [--name my-agent]` is the same driver with a `ws://localhost:3000` default for bare codes. This is how an agent plays against humans or live bots instead of a benchmark suite.
 
-```
-node bench/live.js --url ws://localhost:3000 --room abcd --agent <spec> [--name my-agent]
-```
+`driveLiveSeat({ url, room, spec, name, onEvent })` connects to `<url>/ws?room=<room>`, calls `hello` once, then requests a seat with `join { name, agent: true }` through a single guarded path. If the room is mid-game the server answers `game_in_progress`; the driver waits as a visitor, never calling `start` or acting, and joins at the next lobby state. On reconnect it sends `resume` and ignores the server's immediate visitor snapshot until the resume is answered, so a join never races a resume. A rejected resume token (`unknown_token`) clears its identity and requests a fresh seat. It calls the adapter's `start` hook exactly once per game, on the first `playing` state seen while seated since the last lobby or `game_over` (this also covers joining or reconnecting mid-game), and `end` exactly once on `game_over`. On every `state` message where `game.decision` is set, `game.current_player` is this seat, and the turn has not already been answered, it calls `decide` with `timeoutMs = max(1, timer.remainingMs − 250)` and retry disabled (a human or another agent is waiting, so there is no second attempt), then sends `act { turnNumber, action }`. States that arrive while a decision is still in flight are not dropped: the newest one is reprocessed once the current decision settles, and if it shows the turn has already moved on, the late action is not sent. An action the socket could not deliver leaves the turn pending for after the reconnect. It reconnects with the same backoff as the browser (1 s × 1.5, capped at 5 s) on every socket close except code `4000`. `close()` cancels any pending reconnect, stops all processing, and awaits the adapter's `shutdown`.
 
-`driveLiveSeat({ url, room, spec, name, log })` connects to `<url>/ws?room=<room>`, calls `hello` once, then sends `join { name, agent: true }`. It calls the adapter's `start` hook exactly once per game, on the first `playing` state seen since the last lobby or `game_over` (this also covers joining or reconnecting mid-game, where that first `playing` state is not necessarily turn 1), and `end` exactly once on `game_over`. On every `state` message where `game.decision` is set, `game.current_player` is this seat, and the turn has not already been answered, it calls `decide` with `timeoutMs = max(1, timer.remainingMs − 250)` and retry disabled (a human or another agent is waiting, so there is no second attempt), then sends `act { turnNumber, action }`. States that arrive while a decision is still in flight are not dropped: the newest one is reprocessed once the current decision settles, so a turn the server already defaulted is never answered late. It reconnects with the same backoff as the browser (1 s × 1.5, capped at 5 s) on every socket close except code `4000` (seat taken over by a resume, which means stop). `close()` cancels any pending reconnect and awaits the adapter's `shutdown`.
+`done` resolves with the `game_over` state of the driver's own game and rejects with a `DriverError` whose `code` is `seat_taken_over` (close 4000), `room_full`, or `adapter` (the adapter threw from `hello`, `start`, or a decision, which for a subprocess includes exiting). Per-move timeouts and invalid replies are fallbacks inside `decide` and never end the run. Events (`ready`, `seated`, `waiting`, `decision`, `game_over`, `reconnecting`, `error`) go to `onEvent`.
 
 The room shows an "agent" badge on the seat, and a connected agent counts as an occupant for room lifetime (spec §4.5) — the room is not deleted just because no human is connected.
 
