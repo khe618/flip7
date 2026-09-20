@@ -216,3 +216,98 @@ test("in-process: a reply that resolves after the deadline is ignored, and a lat
   assert.equal(d2.attempts[0].outcome, "ok");
   delete process.env.BAD_MODE;
 });
+
+const os = require("node:os");
+const fs = require("node:fs");
+const CLAUDE_CMD = [process.execPath, FIX("fake-claude.js")];
+const ENV_KEYS = ["FAKE_CLAUDE_MODE", "FAKE_CLAUDE_COUNTER", "FAKE_CLAUDE_PIDFILE", "CLAUDECODE"];
+let envSnapshot = null;
+test.beforeEach(() => { envSnapshot = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]])); });
+test.afterEach(() => { for (const k of ENV_KEYS) { if (envSnapshot[k] === undefined) delete process.env[k]; else process.env[k] = envSnapshot[k]; } });
+function claude(spec = "claude-code", mode = "ok", extra = {}) {
+  process.env.FAKE_CLAUDE_MODE = mode;
+  for (const [k, v] of Object.entries(extra)) process.env[k] = v;
+  return resolveAgent(spec, { command: CLAUDE_CMD });
+}
+function firstView() { const s = engine.step(engine.createGame({ players: P2, seed: 4 }), { type: "start_round" }).state; return observeGame(s, engine.pendingPlayer(s)); }
+const oneMove = (a, timeoutMs = 5000) => decide(a, { gameView: firstView(), gameId: "t", timeoutMs, retry: false });
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+async function untilDead(pid, ms = 3000) { const end = Date.now() + ms; while (pidAlive(pid) && Date.now() < end) await new Promise((r) => setTimeout(r, 50)); return !pidAlive(pid); }
+
+test("claude-code: hello probes a real call, reports version and effective model, and fails clearly", async () => {
+  const a = claude();
+  const h = await a.hello();
+  assert.equal(a.name, "claude-code:claude-fake-1");
+  assert.equal(a.version, "9.9.9");
+  assert.equal(h.protocol, "flip7-agent/1");
+  await a.shutdown();
+
+  const bad = claude("claude-code", "probe-error");
+  await assert.rejects(bad.hello(), (err) => err instanceof AdapterError && /Not logged in/.test(err.message));
+
+  process.env.FAKE_CLAUDE_MODE = "ok";
+  const missing = resolveAgent("claude-code", { command: "flip7-definitely-not-installed-xyz" });
+  await assert.rejects(missing.hello(), (err) => err instanceof AdapterError && /not found on PATH/.test(err.message));
+
+  assert.throws(() => resolveAgent("claude-code:bad model!"), (err) => err instanceof AdapterError && /model/.test(err.message));
+});
+
+test("claude-code: move sends the rendered request on stdin, passes --model, strips CLAUDECODE, and plays a game", async () => {
+  process.env.CLAUDECODE = "1";
+  const a = claude("claude-code:sonnet");
+  const out = await playOne(a, 5000);
+  assert.ok(out.decisions.length > 5);
+  const raw = JSON.parse(out.decisions[0].attempts[0].raw_response);
+  assert.equal(raw.claudecode, null, "CLAUDECODE must not reach the child");
+  assert.ok(raw.argv.includes("--model") && raw.argv[raw.argv.indexOf("--model") + 1] === "sonnet");
+  assert.ok(raw.argv.includes("-p") && raw.argv.includes("--output-format") && raw.argv[raw.argv.indexOf("--tools") + 1] === "");
+  assert.ok(raw.inputLength > 200, "the whole rendered request reached stdin before EOF");
+  assert.equal(out.decisions[0].fallback_used, false);
+});
+
+test("claude-code: is_error, non-JSON, exit 1, early EOF, and oversize output are invalid replies; three in a row are fatal", async () => {
+  for (const mode of ["error", "nonjson", "exit1", "eof-early", "huge"]) {
+    const a = claude("claude-code", mode);
+    if (mode === "eof-early") { await assert.rejects(a.hello(), AdapterError, "the probe fails when claude exits without answering"); process.env.FAKE_CLAUDE_MODE = "ok"; await a.hello(); process.env.FAKE_CLAUDE_MODE = mode; }
+    else await a.hello();
+    const d1 = await oneMove(a);
+    assert.equal(d1.fallback_used, true, mode);
+    assert.equal(d1.attempts[0].outcome, "invalid", mode);
+    const d2 = await oneMove(a);
+    assert.equal(d2.fallback_used, true, mode);
+    await assert.rejects(oneMove(a), (err) => err instanceof AdapterError && /3 consecutive/.test(err.message), mode);
+    await a.shutdown();
+  }
+});
+
+test("claude-code: a good reply resets the consecutive-error counter", async () => {
+  const counter = path.join(os.tmpdir(), `flip7-fake-claude-${process.pid}.txt`);
+  try { fs.unlinkSync(counter); } catch { /* fresh */ }
+  const a = claude("claude-code", "error-twice", { FAKE_CLAUDE_COUNTER: counter });
+  await a.hello();
+  const ds = [await oneMove(a), await oneMove(a), await oneMove(a), await oneMove(a)];
+  assert.deepEqual(ds.map((d) => d.fallback_used), [true, true, false, false]);
+  await a.shutdown();
+});
+
+test("claude-code: a slow reply is killed at the deadline (no orphan), shutdown kills live moves, and nothing runs after shutdown", async () => {
+  const pidfile = path.join(os.tmpdir(), `flip7-fake-claude-pids-${process.pid}.txt`);
+  try { fs.unlinkSync(pidfile); } catch { /* fresh */ }
+  const a = claude("claude-code", "sleep", { FAKE_CLAUDE_PIDFILE: pidfile });
+  process.env.FAKE_CLAUDE_MODE = "ok"; await a.hello(); process.env.FAKE_CLAUDE_MODE = "sleep";
+  const d = await oneMove(a, 300);
+  assert.equal(d.attempts[0].outcome, "timeout");
+  assert.equal(d.fallback_used, true);
+  const pids = () => fs.readFileSync(pidfile, "utf8").trim().split("\n").map(Number);
+  assert.equal(await untilDead(pids()[0]), true, "the timed-out child must be killed");
+  // A second move starts a fresh child; shutdown during it must return within ~2 s and kill it.
+  const pending = oneMove(a, 10000);
+  await new Promise((r) => setTimeout(r, 300));
+  const started = Date.now();
+  await a.shutdown();
+  assert.ok(Date.now() - started < 3000, "shutdown must not wait for the 5 s sleeper");
+  const d2 = await pending;
+  assert.equal(d2.fallback_used, true, "the killed move falls back rather than hanging");
+  assert.equal(await untilDead(pids()[1]), true, "the child live at shutdown must be killed");
+  await assert.rejects(oneMove(a), (err) => err instanceof AdapterError && /shut down/.test(err.message), "no new process after shutdown");
+});
