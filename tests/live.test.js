@@ -70,8 +70,10 @@ async function human(room, humanName = "Kay") {
   const send = (o) => ws.send(JSON.stringify(o));
   const until = (pred, what, ms = 60000) => new Promise((resolve, reject) => {
     const hit = seen.find(pred); if (hit) { resolve(hit); return; }
-    const t = setTimeout(() => reject(new Error(`${what} did not happen within ${ms / 1000} s`)), ms).unref();
-    ws.on("message", (b) => { const m = JSON.parse(String(b)); if (pred(m)) { clearTimeout(t); resolve(m); } });
+    let t;
+    const listener = (b) => { const m = JSON.parse(String(b)); if (pred(m)) { clearTimeout(t); ws.off("message", listener); resolve(m); } };
+    t = setTimeout(() => { ws.off("message", listener); reject(new Error(`${what} did not happen within ${ms / 1000} s`)); }, ms).unref();
+    ws.on("message", listener);
   });
   return { ws, seen, send, until, close: () => ws.close() };
 }
