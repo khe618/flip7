@@ -168,3 +168,18 @@ test("close() stops processing: no decision and no send after close", async () =
   assert.equal(sent.filter((m) => m.type === "act").length, 0);
   assert.equal(driver.stats.decisions, 0);
 });
+
+test("a blocked join never latches joinInFlight: the next lobby state retries once sending works again", async () => {
+  // _send consults a mutable flag so the same message can be "blocked" (socket gone) and then
+  // "delivered" (socket back) without a real socket.
+  let allowSend = false;
+  const sent = [];
+  const { driver } = make({ _send: (m) => { if (!allowSend) return false; sent.push(m); return true; } });
+  driver._receive({ type: "error", code: "game_in_progress", message: "Game in progress." });
+  await driver._receive(lobby);   // requestSeat() runs but send() is blocked: joinInFlight must not latch
+  assert.equal(joins(sent), 0, "the blocked join never reached the wire");
+  allowSend = true;
+  await driver._receive(lobby);   // joinInFlight was never stuck true, so this lobby state retries
+  assert.equal(joins(sent), 1, "exactly one join once sending is possible again");
+  await driver.close();
+});

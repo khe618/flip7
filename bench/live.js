@@ -63,14 +63,21 @@ function driveLiveSeat({ url, room, spec, name, log = console.log, onEvent = nul
     return false;
   }
 
-  // The only place a join is sent.
+  // The only place a join is sent. Latches joinInFlight only once the join actually went out; a
+  // failed send (socket gone) leaves waitingForLobby set so the next lobby state retries instead
+  // of leaving the driver stuck watching forever with a latch nothing will ever clear.
   function requestSeat() {
     if (seated || joinInFlight || resumeInFlight || settled || closed) return;
+    if (!send({ type: "join", name: name || adapter.name, agent: true })) { waitingForLobby = true; return; }
     joinInFlight = true; waitingForLobby = false;
-    send({ type: "join", name: name || adapter.name, agent: true });
   }
 
-  function sendResume() { resumeInFlight = true; send({ type: "resume", resumeToken: token }); }
+  // Same care as requestSeat(): resumeInFlight is set only once the resume actually went out, so
+  // a failed send never leaves the resume-race guard latched with nothing to clear it.
+  function sendResume() {
+    if (!send({ type: "resume", resumeToken: token })) return;
+    resumeInFlight = true;
+  }
 
   function loseSeat() { seated = false; you = null; token = null; }
 
@@ -155,7 +162,12 @@ function driveLiveSeat({ url, room, spec, name, log = console.log, onEvent = nul
     ws = new WebSocket(`${url.replace(/\/+$/, "")}/ws?room=${room}`);
     ws.on("open", async () => {
       delay = 1000;
-      try { await helloDone; } catch { ws.close(); return; }
+      const sock = ws;
+      try { await helloDone; } catch { sock.close(); return; }
+      // A reconnect may have replaced `ws` while this handler was awaiting helloDone (the socket
+      // dropped, close() rescheduled connect()); a stale handler must never act on behalf of a
+      // socket that is no longer the live one.
+      if (ws !== sock || sock.readyState !== WebSocket.OPEN) return;
       if (token) sendResume();
       else requestSeat();
     });
