@@ -19,11 +19,17 @@ function resolveExecutable(name, { env = process.env, platform = process.platfor
   const exts = win && path.extname(name) === "" ? String(env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean) : [""];
   for (const dir of dirs) for (const ext of exts) {
     const p = path.join(dir, name + ext);
-    // realpath.native (not path.resolve) so a PATHEXT match with different case than the
-    // actual filename (e.g. env PATHEXT ".CMD" hitting an on-disk "tool.cmd") still returns
-    // the real on-disk casing; Windows resolves both to the same file, but callers comparing
-    // the returned path string need it to match what's actually on disk.
-    if (isFile(p)) return { path: win ? fs.realpathSync.native(p) : path.resolve(p), shim: shim(p) };
+    if (isFile(p)) {
+      // realpath.native (not path.resolve) so a PATHEXT match with different case than the
+      // actual filename (e.g. env PATHEXT ".CMD" hitting an on-disk "tool.cmd") still returns
+      // the real on-disk casing; Windows resolves both to the same file, but callers comparing
+      // the returned path string need it to match what's actually on disk. Guarded: the file
+      // can still vanish (or turn into a broken symlink) between the isFile check above and
+      // this call, and no other branch of this function throws, so fall back to path.resolve.
+      let resolved = path.resolve(p);
+      if (win) { try { resolved = fs.realpathSync.native(p); } catch { /* fall back to path.resolve above */ } }
+      return { path: resolved, shim: shim(p) };
+    }
   }
   return null;
 }
