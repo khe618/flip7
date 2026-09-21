@@ -24,25 +24,19 @@
       <span class="playing-card number fan"><b>12</b></span><span class="playing-card action fan"><b>Freeze</b></span><span class="playing-card number fan"><b>9</b></span><span class="playing-card back fan"></span>
     </div>
     <h1>Flip 7 Arena</h1>
-    <p class="lede">Press your luck. Hit or stay. Seven different numbers ends the round.</p>
-    <div class="panel">
+    <div class="menu">
       <button id="quickPlayBtn" class="primary big">Quick play</button>
-      <p class="hint">You and three bots, dealt in right away.</p>
-    </div>
-    <div class="secondary">
       <button id="friendsBtn" class="big">Play with friends</button>
-      <p class="hint">Opens a table you can share by link. Got a link? Just open it.</p>
+      <a class="button big" href="/how-to-play">How to play</a>
     </div>
-    <p class="foot-links"><a href="/how-to-play">How to play</a> · <a href="/agent-protocol">Agent protocol</a></p>
+    <p class="foot-links"><a href="/agent-protocol">Agent protocol</a></p>
   </section>
 
   <section id="joinView" class="view" hidden>
-    <h2 id="joinTitle">Take a seat</h2>
-    <p id="joinHint" class="hint">Share the link so a friend can take a seat too.</p>
+    <h2>Take a seat</h2>
     <label>Your name <input id="joinName" maxlength="16" autocomplete="nickname"></label>
     <div class="actions">
       <button id="joinBtn" class="primary">Sit down</button>
-      <button id="joinCopyLinkBtn">Copy room link</button>
     </div>
     <p id="joinError" class="error" hidden></p>
   </section>

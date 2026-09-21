@@ -189,11 +189,11 @@ input:focus-visible { border-color: var(--gold); }
 .landing .hero { display: flex; justify-content: center; margin: 10px 0 18px; height: 90px; }
 .landing .fan { position: absolute; transform: rotate(calc((var(--i) - 3) * 9deg)) translate(calc((var(--i) - 3) * 26px), calc(abs(var(--i) - 3) * 4px)); }
 .landing .hero { position: relative; } .landing .hero .fan:nth-child(1) { --i: 0 } .landing .hero .fan:nth-child(2) { --i: 1 } .landing .hero .fan:nth-child(3) { --i: 2 } .landing .hero .fan:nth-child(4) { --i: 3 } .landing .hero .fan:nth-child(5) { --i: 4 } .landing .hero .fan:nth-child(6) { --i: 5 } .landing .hero .fan:nth-child(7) { --i: 6 }
-.lede { max-width: 34ch; color: var(--muted); font-size: 1.05rem; }
-.panel { padding: 16px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--edge); margin-bottom: 14px; }
-.panel button { width: 100%; }
-.secondary { display: grid; gap: 10px; margin-bottom: 18px; }
-.landing .panel .hint, .landing .secondary .hint { margin: 8px 0 0; text-align: center; font-size: .875rem; }
+.landing { text-align: center; }
+.landing .menu { display: grid; gap: 10px; max-width: 360px; margin: 8px auto 22px; }
+/* An anchor dressed as a button, so "How to play" sits in the same stack as the two play buttons. */
+a.button { display: inline-flex; align-items: center; justify-content: center; padding: 10px 18px; border: 1px solid var(--edge); border-radius: var(--radius); background: var(--surface); color: var(--text); font-weight: 600; text-decoration: none; }
+a.button:active { transform: translateY(1px); }
 .foot-links { color: var(--muted); font-size: .875rem; }
 .share { width: 100%; margin-bottom: 10px; }
 .felt-panel { padding: 14px; border-radius: 16px; background: radial-gradient(120% 80% at 50% 20%, var(--felt-light), var(--felt)); border: 1px solid var(--edge); margin-bottom: 16px; }
