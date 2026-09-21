@@ -23,7 +23,7 @@ function live(text) {
   if (text !== "connected" && text !== "reconnecting") return;
   $("caption").textContent = text;
 }
-// Shared by the join card and the lobby (spec §3.2 promises the button on both).
+// Used by the lobby and the results screen.
 async function copyLink() {
   try { await navigator.clipboard.writeText(location.href); toast("Link copied"); }
   catch { toast(location.href); }
@@ -80,24 +80,20 @@ function enterRoom(code, intent = null) {
     },
     onState: (msg) => { state = msg; render(); },
   });
-  // Names are asked for on the way into a room, never on the landing page, so
-  // both intents land on the same name card; only the message Sit down sends differs.
-  if (intent === "quick") showJoin("quick");
+  // Quick play never shows the name card: it is sent the moment the room is
+  // entered (net.js queues it until the socket opens) under the remembered name.
+  // Friends rooms ask for a name on the join card, never on the landing page.
+  if (intent === "quick") net.send({ type: "quick-play", name: readName() || "Player" });
   else if (!readToken(code)) showJoin();
 }
 
-function showJoin(mode = "join") {
+function showJoin() {
   showView("joinView");
-  const quick = mode === "quick";
-  $("joinTitle").textContent = quick ? "Quick play" : "Take a seat";
-  $("joinHint").textContent = quick ? "You and three bots. Enter a name to be dealt in." : "Enter a name to sit down, or send the link so a friend can join too.";
-  $("joinCopyLinkBtn").hidden = quick;
   $("joinName").value = readName();
   $("joinBtn").onclick = () => {
     const name = $("joinName").value.trim() || "Player"; writeName(name);
-    net.send({ type: quick ? "quick-play" : "join", name });
+    net.send({ type: "join", name });
   };
-  $("joinCopyLinkBtn").onclick = copyLink;
 }
 
 function render() {
