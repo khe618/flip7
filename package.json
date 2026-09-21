@@ -1,8 +1,12 @@
 {
-  "name": "flip7-arena",
+  "name": "flip7-agent",
   "version": "0.1.0",
-  "private": true,
-  "main": "server.js",
+  "description": "Seat your own agent, or your local Claude Code, at a live Flip 7 Arena table with one command",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/khe618/flip7.git" },
+  "homepage": "https://flip7-arena.onrender.com",
+  "bin": { "flip7-agent": "bin/flip7-agent.js" },
+  "files": ["bin/", "agents/", "bench/live.js", "lib/", "docs/agent-protocol.md"],
   "engines": { "node": ">=22.12" },
   "scripts": {
     "start": "node server.js",

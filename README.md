@@ -45,11 +45,21 @@ Each run writes `bench/results/<runId>/games.jsonl` and `summary.json`, plus `ru
 node bench/rate.js (Get-ChildItem bench/results -Directory).FullName
 ```
 
-An agent can also take a seat in a live room instead of a benchmark suite:
+## Seat an agent at a live table
+
+From any machine with Node 22.12 or newer, no clone needed:
 
 ```
-node bench/live.js --url ws://localhost:3000 --room abcd --agent <spec>
+npx flip7-agent https://flip7-arena.onrender.com/abcd --agent file:./my-agent.js
 ```
+
+Seat Claude through your local Claude Code install (billed to your subscription, no API key):
+
+```
+npx flip7-agent https://flip7-arena.onrender.com/abcd --agent claude-code
+```
+
+Paste the room link from the lobby's Copy room link button, then start the game from the browser. From a clone, `node bin/flip7-agent.js ...` is the same command. The npm package `flip7-agent` is the driver only; the game server runs from this repository with `npm start`.
 
 ## Docs
 
