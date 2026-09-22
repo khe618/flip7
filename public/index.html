@@ -27,9 +27,9 @@
     <div class="menu">
       <button id="quickPlayBtn" class="primary big">Quick play</button>
       <button id="friendsBtn" class="big">Play with friends</button>
+      <a class="button big" href="/connect-an-agent">Connect an agent</a>
       <a class="button big" href="/how-to-play">How to play</a>
     </div>
-    <p class="foot-links"><a href="/agent-protocol">Connect an agent</a></p>
   </section>
 
   <section id="joinView" class="view" hidden>
@@ -49,14 +49,14 @@
       <button id="addBotBtn">Add bot</button>
       <button id="startBtn" class="primary">Start game</button>
     </div>
-    <details class="connect">
+    <details class="connect" open>
       <summary>Connect an agent</summary>
-      <p class="hint">Seat your own agent — or your local Claude Code — at this table. Needs Node 22.12 or newer.</p>
+      <p class="hint">Sit an agent at this table — your own, or Claude Code with no setup. Nothing to install; you need <a href="https://nodejs.org" target="_blank" rel="noopener">Node</a> 22.12 or newer.</p>
       <div class="cmd">
         <code id="agentCmd"></code>
         <button id="copyCmdBtn" class="link copy">Copy</button>
       </div>
-      <p class="hint">Run it in a terminal, then click <b>Start game</b>. Swap <code>claude-code</code> for <code>file:./my-agent.js</code>, <code>cmd:"python agent.py"</code>, or <code>http://host:port</code> — see the <a href="/agent-protocol">full protocol</a>.</p>
+      <p class="hint">Run it in a terminal, then click <b>Start game</b>. <a href="/connect-an-agent">Other kinds of agent</a>.</p>
     </details>
   </section>
 
@@ -115,6 +115,35 @@
       <li>×2 doubles your number cards; +2 to +10 add after. First to 200 wins; ties play another round.</li>
     </ol>
     <a href="/">Back</a>
+  </section>
+
+  <section id="agentView" class="view" hidden>
+    <h2>Connect an agent</h2>
+    <p class="lede">Every Flip 7 Arena room is open to software players. Point the driver at a room link and your agent takes a seat, answers its own turns under the normal timer, and plays alongside the humans at the table.</p>
+    <p class="lede"><b>Nothing to install.</b> The command below fetches and runs the driver in one step — you only need <a href="https://nodejs.org" target="_blank" rel="noopener">Node</a> 22.12 or newer.</p>
+    <ol class="steps">
+      <li>
+        <b>Open a room.</b> Hit <a href="/">Play with friends</a> on the home page, then use <b>Copy room link</b> at the top of the lobby.
+      </li>
+      <li>
+        <b>Run one command</b> in a terminal, with your room link and the agent you want to seat:
+        <div class="cmd"><code>npx flip7-agent &lt;room link&gt; --agent &lt;your agent&gt;</code></div>
+        It prints <code>seated as s2 in room abcd</code> once the agent has a seat, then one line per move.
+      </li>
+      <li>
+        <b>Back in the browser, click Start game.</b> The run ends when that game ends; run it again to play another.
+      </li>
+    </ol>
+    <h3>What you can put after <code>--agent</code></h3>
+    <ul class="agent-kinds">
+      <li><code>file:./my-agent.js</code> — a JavaScript module exporting an <code>act()</code> function</li>
+      <li><code>cmd:"python agent.py"</code> — any program that speaks JSON over stdin and stdout, in any language</li>
+      <li><code>http://host:port</code> — an HTTP service you already run</li>
+      <li><code>claude-code</code> — Claude, through your local Claude Code login; no API key, nothing to write</li>
+      <li><code>bot:adaptive</code> — one of the built-in baseline bots, handy as a smoke test</li>
+    </ul>
+    <p class="hint">Writing your own? The <a href="/agent-protocol">protocol specification</a> gives the exact request and response shapes, the timeout and fallback rules, and what your agent is allowed to see.</p>
+    <p class="foot-links"><a href="/">Back</a></p>
   </section>
 
   <div id="toast" class="toast" hidden></div>

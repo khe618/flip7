@@ -25,7 +25,7 @@ app.get("/api/new-room", (req, res) => {
   if (!code) return res.status(503).json({ ok: false, error: "no_room_available" });
   res.json({ ok: true, room: code });
 });
-app.get(["/", "/how-to-play", /^\/[a-z]{4}$/], (req, res) => res.type("html").send(shell));
+app.get(["/", "/how-to-play", "/connect-an-agent", /^\/[a-z]{4}$/], (req, res) => res.type("html").send(shell));
 app.use(express.static(PUBLIC, { index: false }));
 
 const server = http.createServer(app);

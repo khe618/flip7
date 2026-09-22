@@ -43,6 +43,7 @@ function leaveRoom() {
 function route() {
   const m = location.pathname.match(/^\/([a-z]{4})$/);
   if (location.pathname === "/how-to-play") { leaveRoom(); showView("howToPlayView"); return; }
+  if (location.pathname === "/connect-an-agent") { leaveRoom(); showView("agentView"); return; }
   if (m) { enterRoom(m[1]); return; }
   leaveRoom();
   showView("landingView");

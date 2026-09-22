@@ -223,6 +223,14 @@ button.link { min-height: 0; padding: 2px 6px; margin-left: auto; border: 0; bac
 .cmd { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--edge); border-radius: 10px; background: var(--felt); }
 .cmd code { flex: 1; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .8125rem; color: var(--paper); overflow-wrap: anywhere; user-select: all; }
 button.copy { margin: 0; flex: none; align-self: flex-start; color: var(--cyan); }
+.lede { max-width: 62ch; margin: 0 0 14px; }
+.steps { margin: 0 0 24px; padding-left: 1.3em; display: grid; gap: 16px; max-width: 62ch; }
+.steps li::marker { color: var(--gold); font-family: var(--deck); font-weight: 700; }
+.steps b { color: var(--gold); }
+.steps .cmd { margin: 8px 0; }
+.steps code, .agent-kinds code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .85em; color: var(--paper); }
+.agent-kinds { margin: 0 0 20px; padding-left: 1.3em; display: grid; gap: 8px; max-width: 62ch; color: var(--muted); font-size: .9375rem; }
+.agent-kinds li::marker { color: var(--cyan); }
 .hint { color: var(--muted); font-size: .9375rem; } .error { color: var(--danger); font-size: .875rem; }
 .toast { position: fixed; left: 50%; z-index: 60; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 11px 16px; border: 1px solid var(--edge); border-radius: 999px; background: var(--rail); box-shadow: 0 10px 24px rgba(0,0,0,.5); font-size: .9375rem; text-align: center; }
 

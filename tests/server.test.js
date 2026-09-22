@@ -70,6 +70,11 @@ test("routes: app shell, new-room, health, agent-protocol, unknown", async () =>
   assert.ok((await (await fetch(base + "/")).text()).toLowerCase().includes("<!doctype html>"));
   assert.equal((await fetch(base + "/" + r.room)).status, 200);
   assert.equal((await fetch(base + "/agent-protocol")).headers.get("content-type").split(";")[0], "text/plain");
+  for (const page of ["/how-to-play", "/connect-an-agent"]) {
+    const res = await fetch(base + page);
+    assert.equal(res.status, 200, page);
+    assert.ok((await res.text()).toLowerCase().includes("<!doctype html>"), page);
+  }
   assert.equal((await fetch(base + "/zzzzz")).status, 404);
 });
 
