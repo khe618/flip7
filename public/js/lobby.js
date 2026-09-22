@@ -1,4 +1,12 @@
 const $ = (id) => document.getElementById(id);
+
+// The npx command a player runs to seat an agent at THIS room. Kept pure (and
+// tested) because the room link is the one part a player cannot guess: a wrong
+// origin or code sends their agent to someone else's table.
+export function agentCommand(origin, room) {
+  return `npx flip7-agent ${origin}/${room} --agent claude-code`;
+}
+
 export function render(state, ctx) {
   const list = $("seatList"); list.textContent = "";
   for (const s of state.seats) {
@@ -17,4 +25,13 @@ export function render(state, ctx) {
   $("addBotBtn").onclick = () => ctx.send({ type: "add-bot" });
   $("startBtn").onclick = () => ctx.send({ type: "start-game" });
   $("copyLinkBtn").onclick = ctx.copyLink;
+
+  // Re-rendered on every broadcast; <details> keeps its own open state, so the
+  // panel does not collapse under a player while they are reading it.
+  const cmd = agentCommand(location.origin, ctx.room);
+  $("agentCmd").textContent = cmd;
+  $("copyCmdBtn").onclick = async () => {
+    try { await navigator.clipboard.writeText(cmd); ctx.toast("Command copied"); }
+    catch { ctx.toast(cmd); }
+  };
 }

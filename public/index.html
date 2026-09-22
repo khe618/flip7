@@ -49,6 +49,15 @@
       <button id="addBotBtn">Add bot</button>
       <button id="startBtn" class="primary">Start game</button>
     </div>
+    <details class="connect">
+      <summary>Connect an agent</summary>
+      <p class="hint">Seat your own agent — or your local Claude Code — at this table. Needs Node 22.12 or newer.</p>
+      <div class="cmd">
+        <code id="agentCmd"></code>
+        <button id="copyCmdBtn" class="link copy">Copy</button>
+      </div>
+      <p class="hint">Run it in a terminal, then click <b>Start game</b>. Swap <code>claude-code</code> for <code>file:./my-agent.js</code>, <code>cmd:"python agent.py"</code>, or <code>http://host:port</code> — see the <a href="/agent-protocol">full protocol</a>.</p>
+    </details>
   </section>
 
   <section id="tableView" class="view table" hidden>
